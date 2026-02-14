@@ -1,0 +1,45 @@
+#cloud-config
+bootcmd:
+- printf "[Resolve]\nDNS=8.8.8.8" > /etc/systemd/resolved.conf
+- [systemctl, restart, systemd-resolved]
+users:
+  - name: root
+    ssh_authorized_keys:
+    - ${ssh_public_key}
+growpart:
+    mode: auto
+    devices: ["/"]
+manage_etc_hosts: localhost
+locale: "en_US.UTF-8"
+package_update: true
+package_upgrade: true
+packages:
+    - haproxy
+    - ntp
+write_files:
+  - path: /etc/netplan/99-static.yaml
+    content: |
+      network:
+        version: 2
+        ethernets:
+          eth0:
+            dhcp4: true
+          k8snet:
+            match:
+              macaddress: "${mac_address}"
+            set-name: k8snet
+            addresses:
+              - ${static_ip}/24
+            routes:
+              - to: 192.168.56.0/24
+                scope: link
+            dhcp4: false
+runcmd:
+- netplan apply
+- systemctl stop systemd-timesyncd || true
+- systemctl disable systemd-timesyncd || true
+- grep -q "tinker panic 0" /etc/ntp.conf || sed -i "1i tinker panic 0" /etc/ntp.conf
+- systemctl daemon-reload
+- systemctl restart ntp
+- systemctl restart haproxy
+- touch /tmp/signal

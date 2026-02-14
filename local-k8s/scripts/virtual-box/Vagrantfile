@@ -1,0 +1,340 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# VirtualBox K8s Cluster for Windows Home Edition
+# Uses 192.168.56.x subnet (VirtualBox Host-Only)
+
+# Configuration
+NETWORK_PREFIX = "192.168.56"
+HAPROXY_IP = "#{NETWORK_PREFIX}.10"
+MASTER_IP = "#{NETWORK_PREFIX}.11"
+K8S_VERSION = "1.32"
+K8S_PACKAGE_VERSION = "1.32.1-1.1"
+
+# SSH key for Terraform access
+SSH_KEY_NAME = "kse_ci_cd_sec_id_rsa"
+SSH_PUBLIC_KEY_PATH = File.expand_path("~/.ssh/#{SSH_KEY_NAME}.pub")
+SSH_PUBLIC_KEY = File.exist?(SSH_PUBLIC_KEY_PATH) ? File.read(SSH_PUBLIC_KEY_PATH).strip : ""
+
+# VM specifications - names must match Terraform expectations
+VM_SPECS = {
+  "haproxy"  => { ip_suffix: 10, memory: 4096, cpus: 2, role: "haproxy" },
+  "master-0" => { ip_suffix: 11, memory: 4096, cpus: 2, role: "master" },
+  "worker-0" => { ip_suffix: 21, memory: 3072, cpus: 3, role: "worker" },
+  "worker-1" => { ip_suffix: 22, memory: 3072, cpus: 3, role: "worker" },
+}
+
+# Setup root SSH access for Terraform
+$setup_root_ssh = <<-SCRIPT
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+echo "#{SSH_PUBLIC_KEY}" >> /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+sed -i 's/#PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+sed -i 's/PermitRootLogin no/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+systemctl restart sshd
+SCRIPT
+
+# Common provisioning script for all K8s nodes (master and workers)
+$common_script = <<-SCRIPT
+set -e
+echo "=== Installing containerd and Kubernetes prerequisites ==="
+
+# DNS fix
+echo "[Resolve]
+DNS=8.8.8.8" > /etc/systemd/resolved.conf
+systemctl restart systemd-resolved
+
+# Disable swap
+swapoff -a
+sed -i '/swap/d' /etc/fstab
+
+# Load kernel modules
+cat <<EOF | tee /etc/modules-load.d/k8s.conf
+overlay
+br_netfilter
+ip_vs
+ip_vs_rr
+ip_vs_wrr
+ip_vs_sh
+nf_conntrack
+EOF
+
+modprobe overlay
+modprobe br_netfilter
+modprobe ip_vs
+modprobe ip_vs_rr
+modprobe ip_vs_wrr
+modprobe ip_vs_sh
+modprobe nf_conntrack || true
+
+# Sysctl settings
+cat <<EOF | tee /etc/sysctl.d/k8s.conf
+net.ipv4.ip_forward=1
+net.bridge.bridge-nf-call-ip6tables=1
+net.bridge.bridge-nf-call-iptables=1
+EOF
+sysctl --system
+
+# Install containerd
+apt-get update
+apt-get install -y ca-certificates curl gnupg lsb-release apt-transport-https nfs-common
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list
+apt-get update
+apt-get install -y containerd.io
+
+# Configure containerd
+mkdir -p /etc/containerd
+cat <<EOF | tee /etc/containerd/config.toml
+version = 2
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+  runtime_type = "io.containerd.runc.v2"
+  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+    SystemdCgroup = true
+EOF
+systemctl daemon-reload
+systemctl restart containerd
+systemctl enable containerd
+
+# Install Kubernetes packages
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v#{K8S_VERSION}/deb/Release.key | gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v#{K8S_VERSION}/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
+apt-get update
+apt-get install -y kubelet=#{K8S_PACKAGE_VERSION} kubeadm=#{K8S_PACKAGE_VERSION} kubectl=#{K8S_PACKAGE_VERSION}
+apt-mark hold kubelet kubeadm kubectl
+
+# Configure kubelet to use the Host-Only interface IP
+# Both Hyper-V and VirtualBox use dual NICs, but differ in default route configuration:
+# - Hyper-V (cloud-init): default route goes through K8s network interface (k8snet)
+# - VirtualBox (Vagrant): default route goes through NAT interface (enp0s3) for internet
+# Kubelet uses the interface with default route to determine node IP, so in VirtualBox
+# it would pick the NAT IP (10.0.2.15) instead of Host-Only IP (192.168.56.x)
+# The --node-ip flag explicitly tells kubelet which IP to use for node registration
+NODE_IP=$(ip -4 addr show enp0s8 | awk '/inet / {split($2, a, "/"); print a[1]}')
+echo "Configuring kubelet to use node IP: $NODE_IP"
+echo "KUBELET_EXTRA_ARGS=--node-ip=$NODE_IP" > /etc/default/kubelet
+
+systemctl enable kubelet
+
+echo "=== Common provisioning complete ==="
+SCRIPT
+
+# Master node provisioning
+$master_script = <<-SCRIPT
+set -e
+echo "=== Initializing Kubernetes Master ==="
+
+MASTER_IP="#{MASTER_IP}"
+HAPROXY_IP="#{HAPROXY_IP}"
+
+# Initialize cluster
+kubeadm init \
+  --upload-certs \
+  --pod-network-cidr=10.244.0.0/16 \
+  --apiserver-advertise-address=$MASTER_IP \
+  --control-plane-endpoint=$HAPROXY_IP:6443 \
+  | tee /tmp/kubeadm.log
+
+# Setup kubeconfig for root
+mkdir -p /root/.kube
+cp -f /etc/kubernetes/admin.conf /root/.kube/config
+
+# Setup kubeconfig for vagrant user
+mkdir -p /home/vagrant/.kube
+cp -f /etc/kubernetes/admin.conf /home/vagrant/.kube/config
+chown -R vagrant:vagrant /home/vagrant/.kube
+
+# Install Weave CNI
+export KUBECONFIG=/etc/kubernetes/admin.conf
+kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s.yaml
+
+# Wait for node to be ready (match " Ready " to avoid matching "NotReady")
+echo "Waiting for node to be ready..."
+until kubectl get nodes | awk '{print $2}' | grep -q "^Ready$"; do
+  echo -n "."
+  sleep 5
+done
+echo ""
+
+# Generate join command for workers (shared via Vagrant synced folder)
+kubeadm token create --print-join-command > /vagrant/.join-command
+chmod 644 /vagrant/.join-command
+
+# Generate join files for Terraform (same format as Hyper-V setup)
+echo -n '{"join":"'$(kubeadm token create --ttl 0 --print-join-command)'"}' > /etc/join.json
+CERT_KEY=$(kubeadm init phase upload-certs --upload-certs 2>&1 | tail -1)
+echo -n '{"join":"'$(kubeadm token create --ttl 0 --print-join-command)' --control-plane --certificate-key '$CERT_KEY'"}' > /etc/join-master.json
+
+echo "=== Master initialization complete ==="
+kubectl get nodes
+SCRIPT
+
+# Worker node provisioning
+$worker_script = <<-SCRIPT
+set -e
+echo "=== Joining Kubernetes Cluster ==="
+
+# Wait for join command file (created by master via Vagrant synced folder)
+echo "Waiting for join command from master..."
+TIMEOUT=120
+ELAPSED=0
+while [ ! -f /vagrant/.join-command ]; do
+  echo -n "."
+  sleep 5
+  ELAPSED=$((ELAPSED + 5))
+  if [ $ELAPSED -ge $TIMEOUT ]; then
+    echo ""
+    echo "ERROR: Timed out waiting for join command after ${TIMEOUT}s"
+    exit 1
+  fi
+done
+echo ""
+
+# Join the cluster
+JOIN_CMD=$(cat /vagrant/.join-command)
+eval "$JOIN_CMD"
+
+echo "=== Worker joined cluster ==="
+SCRIPT
+
+# HAProxy provisioning
+$haproxy_script = <<-SCRIPT
+set -e
+echo "=== Installing HAProxy ==="
+
+apt-get update
+apt-get install -y haproxy
+
+# Configure HAProxy for K8s API
+cat <<EOF | tee /etc/haproxy/haproxy.cfg
+global
+    log /dev/log local0
+    log /dev/log local1 notice
+    chroot /var/lib/haproxy
+    stats socket /run/haproxy/admin.sock mode 660 level admin
+    stats timeout 30s
+    user haproxy
+    group haproxy
+    daemon
+
+defaults
+    log     global
+    mode    tcp
+    option  tcplog
+    option  dontlognull
+    timeout connect 5000
+    timeout client  50000
+    timeout server  50000
+
+frontend kubernetes-frontend
+    bind *:6443
+    mode tcp
+    default_backend kubernetes-backend
+
+backend kubernetes-backend
+    mode tcp
+    balance roundrobin
+    option tcp-check
+    server master1 #{MASTER_IP}:6443 check fall 3 rise 2
+
+frontend http-frontend
+    bind *:80
+    mode tcp
+    default_backend http-backend
+
+backend http-backend
+    mode tcp
+    balance roundrobin
+    server master1 #{MASTER_IP}:80 check fall 3 rise 2
+
+frontend https-frontend
+    bind *:443
+    mode tcp
+    default_backend https-backend
+
+backend https-backend
+    mode tcp
+    balance roundrobin
+    server master1 #{MASTER_IP}:443 check fall 3 rise 2
+
+listen stats
+    bind *:8404
+    mode http
+    stats enable
+    stats uri /stats
+    stats refresh 10s
+    stats auth admin:admin
+EOF
+
+systemctl restart haproxy
+systemctl enable haproxy
+
+echo "=== Installing NFS server ==="
+apt-get install -y nfs-kernel-server
+mkdir -p /srv/nfs/k8s-storage
+chown nobody:nogroup /srv/nfs/k8s-storage
+chmod 777 /srv/nfs/k8s-storage
+echo '/srv/nfs/k8s-storage *(rw,sync,no_subtree_check,no_root_squash)' > /etc/exports
+exportfs -ra
+systemctl enable nfs-kernel-server
+systemctl restart nfs-kernel-server
+
+echo "=== Installing PostgreSQL ==="
+DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-contrib
+PG_CONF=$(find /etc/postgresql -name postgresql.conf | head -1)
+PG_HBA=$(find /etc/postgresql -name pg_hba.conf | head -1)
+sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" $PG_CONF
+echo 'host all all 0.0.0.0/0 md5' >> $PG_HBA
+PG_PASSWORD=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
+sudo -u postgres psql -c "ALTER USER postgres PASSWORD '$PG_PASSWORD';"
+echo "PostgreSQL password: $PG_PASSWORD" > /root/postgres_credentials.txt
+chmod 600 /root/postgres_credentials.txt
+systemctl enable postgresql
+systemctl restart postgresql
+
+echo "=== HAProxy + NFS + PostgreSQL installed ==="
+echo "Stats page: http://#{HAPROXY_IP}:8404/stats (admin/admin)"
+SCRIPT
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.synced_folder ".", "/vagrant", disabled: false
+  config.ssh.insert_key = true
+  config.ssh.connect_timeout = 60
+  config.vm.boot_timeout = 600
+  config.vm.graceful_halt_timeout = 120
+
+  VM_SPECS.each do |name, spec|
+    config.vm.define name do |node|
+      node.vm.hostname = name
+      node.vm.network "private_network", ip: "#{NETWORK_PREFIX}.#{spec[:ip_suffix]}"
+
+      node.vm.provider "virtualbox" do |vb|
+        vb.name = name
+        vb.memory = spec[:memory]
+        vb.cpus = spec[:cpus]
+        vb.linked_clone = true
+        vb.gui = false
+        vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+        vb.customize ["modifyvm", :id, "--natdnsproxy1", "on"]
+      end
+
+      # Setup root SSH for Terraform
+      node.vm.provision "shell", inline: $setup_root_ssh
+
+      # Role-based provisioning
+      case spec[:role]
+      when "haproxy"
+        node.vm.provision "shell", inline: $haproxy_script
+      when "master"
+        node.vm.provision "shell", inline: $common_script
+        node.vm.provision "shell", inline: $master_script
+      when "worker"
+        node.vm.provision "shell", inline: $common_script
+        node.vm.provision "shell", inline: $worker_script
+      end
+    end
+  end
+end
