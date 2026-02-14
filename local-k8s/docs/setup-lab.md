@@ -6,12 +6,12 @@ In later labs you will need to upgrade to the **Team** plan (a free trial is ava
 
 ### Fork the course repositories
 
-Clone the following repositories:
+Create fork of the following repositories in your organization:
 ```bash
-git clone https://github.com/kse-bd8338bbe006/lab-env-setup.git
-git clone https://github.com/kse-bd8338bbe006/kse-labs-deployment.git
-git clone https://github.com/kse-bd8338bbe006/kse-labs-trusted-workflows.git
-git clone https://github.com/kse-bd8338bbe006/simple-go-service-a.git
+https://github.com/kse-bd8338bbe006/lab-env-setup.git
+https://github.com/kse-bd8338bbe006/kse-labs-deployment.git
+https://github.com/kse-bd8338bbe006/kse-labs-trusted-workflows.git
+https://github.com/kse-bd8338bbe006/simple-go-service-a.git
 ```
 
 For **each** repository, create a new **empty** repository with the **same name** in your organization via GitHub UI (no README, no .gitignore).
