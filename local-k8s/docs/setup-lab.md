@@ -1,21 +1,14 @@
 ## GitHub Organization Creation
 
-You need a GitHub account before proceeding. Create a new organization at [github.com/organizations/plan](https://github.com/organizations/plan) with a unique name, for example `kse-<your_unique_id>`. Start with the **Free** plan — you can upgrade later.
+A GitHub account is required before proceeding. Create a new organization at [github.com/organizations/plan](https://github.com/organizations/plan) with a unique name, for example `kse-<your_unique_id>`. Start with the **Free** plan — you can upgrade later.
 
-In later labs you will need to upgrade to the **Team** plan (free trial available). The Free plan does not include security features we'll use in the course. See [github.com/security/plans](https://github.com/security/plans) for the full comparison. Key differences:
-
-- **Secret scanning & push protection** — Free plan covers public repos only; Team extends to private repos
-- **Validity checks** — Team verifies if detected secrets are still active at the provider
-- **Copilot secret scanning** — AI-powered detection of unstructured secrets (e.g., passwords in code)
-- **Generic pattern detection** — catches secrets from unknown providers (not just known patterns)
-- **Push protection bypass controls** — audit and manage who can bypass push protection
-- **Dependency review action** — block PRs that introduce vulnerable dependencies
-- **Custom Dependabot auto-triage rules** — automatically dismiss or snooze low-risk alerts
+In later labs you will need to upgrade to the **Team** plan (a free trial is available). The Free plan does not include the security features used in this course. See [github.com/security/plans](https://github.com/security/plans) for a full comparison.
 
 ### Fork the course repositories
 
 Clone the following repositories:
 ```bash
+git clone https://github.com/kse-bd8338bbe006/lab-env-setup.git
 git clone https://github.com/kse-bd8338bbe006/kse-labs-deployment.git
 git clone https://github.com/kse-bd8338bbe006/kse-labs-trusted-workflows.git
 git clone https://github.com/kse-bd8338bbe006/simple-go-service-a.git
