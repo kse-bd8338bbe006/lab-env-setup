@@ -125,7 +125,7 @@ flowchart TB
 flowchart TB
     Internet((Internet))
     Host["Windows/macOS Host<br/>192.168.50.1<br/>(Gateway)"]
-    Switch["K8sSwitch<br/>192.168.50.0/24<br/>Hyper-V Virtual Switch"]
+    Switch["Virtual Network 192.168.50.0/24<br/>Windows: K8sSwitch (Hyper-V)<br/>macOS: bridge101 (QEMU)"]
 
     Internet --> Host
     Host --> Switch
