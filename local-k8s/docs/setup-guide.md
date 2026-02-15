@@ -1,16 +1,5 @@
 # Kubernetes Cluster Setup Guide
 
-> **Prerequisites**
-> - Basic command line familiarity (PowerShell on Windows, Terminal on macOS)
-> - Administrator/sudo access on your machine
-> - Stable internet connection for initial provisioning
-
-> **Related Reading**
-> - [Kubernetes Configuration Guide](k8s-conf.md) - Architecture and component details
-> - [Network Configuration Guide](network-configuration.md) - Networking deep dive
-
----
-
 ## Learning Objectives
 
 1. Install and configure required software dependencies (Multipass, Terraform, VirtualBox)
@@ -31,8 +20,8 @@ Before starting, verify your machine meets these minimum specifications.
 | Resource | Minimum | Recommended |
 |----------|---------|-------------|
 | RAM | 12 GB | 16+ GB |
-| CPU Cores | 4 | 6+ |
-| Free Disk | 50 GB | 100 GB |
+| CPU Cores | 6 | 8+ |
+| Free Disk | 80 GB | 100 GB |
 | OS (Windows) | Windows 10/11 (any edition) | Windows 11 Pro |
 | OS (macOS) | macOS 10.15 Catalina | macOS 12 Monterey+ |
 
@@ -93,6 +82,14 @@ brew tap hashicorp/tap
 brew install hashicorp/tap/terraform
 terraform version
 ```
+
+**Alternative — Docker image:**
+
+If you prefer not to install Terraform locally, you can run it via the official Docker image:
+```bash
+docker run --rm -it -v $(pwd):/workspace -w /workspace hashicorp/terraform:latest version
+```
+Replace `version` with `init`, `plan`, or `apply` as needed. Mount your SSH keys and kubeconfig directories as additional volumes if required.
 
 ### 2.3 Install VirtualBox and Vagrant (Windows Home Only)
 
