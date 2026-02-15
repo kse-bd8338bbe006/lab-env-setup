@@ -21,24 +21,24 @@ This lab environment creates a production-like Kubernetes cluster on your local 
 
 ### High-Level Architecture
 
-> **Note:** The IP addresses shown below are for the **Windows** configuration, which uses static IPs on the `192.168.50.0/24` subnet. On **macOS**, Multipass assigns dynamic IPs via DHCP - run `multipass list` to see actual addresses.
+> **Note:** Both Windows and macOS use static IPs on the `192.168.50.0/24` subnet, configured via cloud-init netplan on the `k8snet` interface.
 
 ```mermaid
 %%{init: {"look": "handDrawn", "theme": "neutral"}}%%
 flowchart TB
     subgraph Host["Windows/macOS Host"]
-        subgraph VNet["Virtual Network<br/>Windows: 192.168.50.0/24 (K8sSwitch)<br/>macOS: DHCP assigned"]
-            HAProxy["HAProxy + NFS<br/>Windows: .50.10 | macOS: DHCP<br/>API LB :6443<br/>Ingress LB :80/:443"]
+        subgraph VNet["Virtual Network<br/>192.168.50.0/24"]
+            HAProxy["HAProxy + NFS<br/>.50.10<br/>API LB :6443<br/>Ingress LB :80/:443"]
 
             subgraph Masters["Control Plane"]
-                M0["Master-0<br/>Windows: .50.11 | macOS: DHCP<br/>API Server, etcd<br/>Scheduler, Controller"]
-                M1["Master-1<br/>Windows: .50.12 | macOS: DHCP<br/>(optional)"]
-                M2["Master-2<br/>Windows: .50.13 | macOS: DHCP<br/>(optional)"]
+                M0["Master-0<br/>.50.11<br/>API Server, etcd<br/>Scheduler, Controller"]
+                M1["Master-1<br/>.50.12<br/>(optional)"]
+                M2["Master-2<br/>.50.13<br/>(optional)"]
             end
 
             subgraph Workers["Worker Nodes"]
-                W0["Worker-0<br/>Windows: .50.21 | macOS: DHCP<br/>kubelet, kube-proxy"]
-                W1["Worker-1<br/>Windows: .50.22 | macOS: DHCP<br/>kubelet, kube-proxy"]
+                W0["Worker-0<br/>.50.21<br/>kubelet, kube-proxy"]
+                W1["Worker-1<br/>.50.22<br/>kubelet, kube-proxy"]
                 WN["...more workers"]
             end
 
@@ -64,11 +64,11 @@ flowchart TB
 
 ### Default Configuration
 
-| Component | Count | Memory | CPU | Disk | IP Range (Windows) | IP Range (macOS) |
-|-----------|-------|--------|-----|------|--------------------|------------------|
-| HAProxy | 1 | 4GB | 2 | 30GB | 192.168.50.10 | DHCP assigned |
-| Master | 1-3 | 4GB | 2 | 10GB | 192.168.50.11-13 | DHCP assigned |
-| Worker | 2 (configurable) | 3GB | 3 | 15GB | 192.168.50.21+ | DHCP assigned |
+| Component | Count | Memory | CPU | Disk | Static IP |
+|-----------|-------|--------|-----|------|-----------|
+| HAProxy | 1 | 4GB | 2 | 30GB | 192.168.50.10 |
+| Master | 1-3 | 4GB | 2 | 10GB | 192.168.50.11-13 |
+| Worker | 2 (configurable) | 3GB | 3 | 15GB | 192.168.50.21+ |
 
 ---
 
@@ -82,7 +82,7 @@ flowchart TB
 - Load balances Kubernetes API traffic (port 6443) across master nodes
 - Load balances HTTP/HTTPS traffic to Ingress controllers on workers
 - Provides NFS storage for Kubernetes Persistent Volumes
-- Exposes HAProxy stats dashboard at `http://<haproxy-ip>/stats` (Windows: `192.168.50.10`, macOS: run `multipass info haproxy`)
+- Exposes HAProxy stats dashboard at `http://192.168.50.10/stats`
 
 **Why it matters:**
 > In production, you'd use a cloud load balancer (AWS ALB, GCP Load Balancer). HAProxy simulates this locally, allowing you to learn HA patterns without cloud costs.
@@ -112,7 +112,7 @@ flowchart TB
 |-----------|-------------|
 | `kubelet` | Agent that ensures containers are running in pods |
 | `kube-proxy` | Network proxy implementing Service abstraction |
-| `container runtime` | Docker (via cri-dockerd) runs the actual containers |
+| `container runtime` | containerd runs the actual containers |
 
 ---
 
@@ -145,8 +145,6 @@ flowchart TB
 
 ### IP Address Scheme
 
-**Windows (Static IPs via Hyper-V K8sSwitch):**
-
 > **Why static IPs?** Kubernetes clusters benefit from stable IP addresses. API server certificates include specific IPs in their Subject Alternative Names (SANs), etcd cluster members need to locate each other, and HAProxy backends are configured with specific master IPs. If a node's IP changes after cluster setup, certificates become invalid and cluster communication breaks. Static IPs eliminate this risk.
 
 | Range | Purpose |
@@ -156,25 +154,14 @@ flowchart TB
 | `192.168.50.11-19` | Master nodes |
 | `192.168.50.21-29` | Worker nodes |
 
-**macOS (Dynamic IPs via Multipass DHCP):**
-
-| Component | How to Find IP |
-|-----------|----------------|
-| All VMs | `multipass list` |
-| HAProxy | `multipass info haproxy \| grep IPv4` |
-| Master | `multipass info master-0 \| grep IPv4` |
-| Workers | `multipass info worker-0 \| grep IPv4` |
-
-**Shared (Both Platforms):**
-
 | Range | Purpose |
 |-------|---------|
 | `10.244.0.0/16` | Pod network (Weave CNI) |
 | `10.96.0.0/12` | Service ClusterIPs (default) |
 
-### Virtual Network Architecture (Windows)
+### Virtual Network Architecture
 
-The host's IP `192.168.50.1` is on a **virtual interface** (`vEthernet (K8sSwitch)`), not a physical one. Everything on the `192.168.50.0/24` subnet is virtual:
+On Windows, the host's IP `192.168.50.1` is on a **virtual interface** (`vEthernet (K8sSwitch)`). On macOS, the host reaches the same subnet via a bridge alias on `bridge101`. Everything on the `192.168.50.0/24` subnet is virtual:
 
 | Entity | Interface Type | IP |
 |--------|----------------|-----|
@@ -246,7 +233,7 @@ flowchart TB
     end
 
     subgraph S2["2. VM CREATION"]
-        T2["data.tf via multipass.ps1<br/>HAProxy VM -> Master-0 VM -> Worker VMs<br/><br/>Each VM cloud-init:<br/>- Static IP via netplan<br/>- Docker, kubeadm, kubelet<br/>- cri-dockerd<br/>- /tmp/signal when ready"]
+        T2["data.tf via multipass.ps1<br/>HAProxy VM -> Master-0 VM -> Worker VMs<br/><br/>Each VM cloud-init:<br/>- Static IP via netplan<br/>- containerd, kubeadm, kubelet<br/>- /tmp/signal when ready"]
     end
 
     subgraph S3["3. HAPROXY CONFIGURATION"]
@@ -311,7 +298,7 @@ kubeadm init \
   --pod-network-cidr 10.244.0.0/16 \
   --apiserver-advertise-address $LOCAL_IP \
   --control-plane-endpoint $HAPROXY_IP:6443 \
-  --cri-socket unix:///var/run/cri-dockerd.sock
+  --cri-socket unix:///var/run/containerd/containerd.sock
 ```
 
 ### Flag Explanation
@@ -322,7 +309,7 @@ kubeadm init \
 | `--pod-network-cidr` | `10.244.0.0/16` | IP range for pod networking. This is the default for Flannel CNI (we use Weave which also accepts this). Must not overlap with node network. |
 | `--apiserver-advertise-address` | `$LOCAL_IP` | IP address the API server advertises to cluster members. Uses the node's static IP on k8snet. |
 | `--control-plane-endpoint` | `$HAPROXY_IP:6443` | **Critical for HA:** Stable endpoint for the control plane. Points to HAProxy, not a single master. All nodes use this to reach the API. |
-| `--cri-socket` | `unix:///var/run/cri-dockerd.sock` | Container Runtime Interface socket. Uses cri-dockerd to bridge Docker with Kubernetes CRI. |
+| `--cri-socket` | `unix:///var/run/containerd/containerd.sock` | Container Runtime Interface socket. Uses containerd directly as the CRI runtime. |
 
 ### Why Each Flag Matters
 
@@ -359,7 +346,7 @@ This project uses two cloud-init template files to provision different types of 
 | Template | Used For | Purpose |
 |----------|----------|---------|
 | `cloud-init-haproxy.yaml` | HAProxy VM | Lightweight - only needs HAProxy and networking |
-| `cloud-init.yaml` | Master & Worker VMs | Full Kubernetes stack - Docker, kubeadm, kubelet, cri-dockerd |
+| `cloud-init.yaml` | Master & Worker VMs | Full Kubernetes stack - containerd, kubeadm, kubelet |
 
 The separation follows the **single responsibility principle**: HAProxy doesn't need Kubernetes components, and K8s nodes don't need HAProxy.
 
@@ -422,7 +409,7 @@ bootcmd:
   - printf "[Resolve]\nDNS=8.8.8.8" > /etc/systemd/resolved.conf
   - [systemctl, restart, systemd-resolved]
 
-  # Add Docker repository
+  # Add containerd repository (Docker's apt repo provides containerd.io)
   - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
   - echo "deb [arch=... signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ..."
 
@@ -431,7 +418,7 @@ bootcmd:
   - echo 'deb [signed-by=...] https://pkgs.k8s.io/core:/stable:/v${k_minor_version}/deb/ /' | tee ...
 ```
 
-**Why bootcmd?** These commands run before the network is fully configured and before package installation. Adding repositories here ensures `apt` can find Docker and Kubernetes packages.
+**Why bootcmd?** These commands run before the network is fully configured and before package installation. Adding repositories here ensures `apt` can find containerd and Kubernetes packages.
 
 #### Section 2: Package Installation
 
@@ -443,13 +430,12 @@ packages:
   - kubectl=${k_version}
 
   # Container runtime
-  - docker-ce
+  - containerd.io
 
   # Utilities
   - apt-transport-https     # HTTPS package sources
   - ntp                     # Time synchronization (critical for certificates)
   - jq                      # JSON parsing for scripts
-  - make                    # Required to build cri-dockerd
   - nfs-common              # Mount NFS volumes from HAProxy
 ```
 
@@ -491,15 +477,6 @@ write_files:
       net.bridge.bridge-nf-call-ip6tables=1   # Bridge traffic to ip6tables
       net.bridge.bridge-nf-call-iptables=1    # Bridge traffic to iptables
 
-  # 4. Docker daemon configuration
-  - path: /etc/docker/daemon.json
-    content: |
-      {
-        "exec-opts": ["native.cgroupdriver=systemd"],  # Match kubelet cgroup driver
-        "log-driver": "json-file",
-        "log-opts": { "max-size": "100m" },
-        "storage-driver": "overlay2"
-      }
 ```
 
 **Critical configurations explained:**
@@ -509,7 +486,6 @@ write_files:
 | `99-static.yaml` | Gives each node a predictable IP address |
 | `k8s.conf` (modules) | Kubernetes networking requires these kernel modules |
 | `k8s.conf` (sysctl) | Enables IP forwarding for pod-to-pod traffic |
-| `daemon.json` | Docker must use systemd cgroup driver to match kubelet |
 
 #### Section 4: Runtime Commands
 
@@ -520,16 +496,7 @@ runcmd:
   - modprobe overlay && modprobe br_netfilter && modprobe ip_vs ...
   - sysctl --system
   - systemctl daemon-reload
-  - systemctl restart docker kubelet
-
-  # Build and install cri-dockerd (Docker ↔ Kubernetes bridge)
-  - wget https://go.dev/dl/go1.21.3.linux-amd64.tar.gz
-  - tar -xvf go1.21.3.linux-amd64.tar.gz && mv go /usr/local/
-  - git clone https://github.com/Mirantis/cri-dockerd.git
-  - cd cri-dockerd && make cri-dockerd
-  - install -o root -g root -m 0755 cri-dockerd /usr/local/bin/cri-dockerd
-  - install packaging/systemd/* /etc/systemd/system
-  - systemctl enable --now cri-docker.socket
+  - systemctl restart containerd kubelet
 
   # Kubernetes join command (injected by Terraform for workers)
   - ${extra_cmd}
@@ -538,11 +505,6 @@ runcmd:
   - echo ${haproxy_ip} > /tmp/haproxy_ip
   - touch /tmp/signal
 ```
-
-**Why build cri-dockerd from source?**
-- Kubernetes 1.24+ removed dockershim (built-in Docker support)
-- cri-dockerd is the official replacement maintained by Mirantis
-- Building from source ensures we get the latest compatible version
 
 ### Template Variables
 
@@ -605,7 +567,7 @@ multipass purge             # Remove deleted VMs
 
 **Our usage:**
 - Configure static IP via netplan
-- Install packages (Docker, kubeadm, kubelet)
+- Install packages (containerd, kubeadm, kubelet)
 - Write configuration files
 - Run initialization scripts
 - Signal completion via `/tmp/signal`
@@ -637,23 +599,22 @@ count       # Create multiple instances
 templatefile()  # Variable substitution in templates
 ```
 
-### cri-dockerd
+### containerd
 
-**What:** Docker-to-CRI bridge
+**What:** Industry-standard container runtime
 
-**Why needed:**
-- Kubernetes 1.24+ removed built-in Docker support
-- Docker doesn't implement CRI (Container Runtime Interface)
-- cri-dockerd translates CRI calls to Docker API
+**Why we use it:**
+- Native CRI (Container Runtime Interface) support — no shim or bridge needed
+- Default runtime for Kubernetes since dockershim was removed in 1.24
+- Lightweight and production-proven (used by Docker Engine under the hood)
 
 ```mermaid
 %%{init: {"look": "handDrawn", "theme": "neutral"}}%%
 flowchart LR
-    kubelet --> CRI --> cri-dockerd --> Docker --> containerd --> containers
+    kubelet --> CRI --> containerd --> containers
 
     style kubelet fill:#e1f5fe
-    style cri-dockerd fill:#fff3e0
-    style Docker fill:#e8f5e9
+    style containerd fill:#fff3e0
     style containers fill:#c8e6c9
 ```
 
@@ -685,9 +646,7 @@ multipass exec master-0 -- cat /var/log/cloud-init-output.log
 
 ### Check HAProxy status
 ```bash
-# Web UI (replace IP with your HAProxy IP)
-# Windows: http://192.168.50.10/stats
-# macOS: http://<haproxy-ip>/stats  (run 'multipass info haproxy' to get IP)
+# Web UI: http://192.168.50.10/stats
 # Credentials: hapuser / password!1234
 
 # Or via CLI
@@ -696,20 +655,12 @@ multipass exec haproxy -- systemctl status haproxy
 
 ### Verify network connectivity
 ```bash
-# Get VM IPs first (required on macOS, useful on Windows)
-multipass list
-
-# From your host (use actual IPs from multipass list)
-# Windows:
+# From your host
 ping 192.168.50.10  # HAProxy
 ping 192.168.50.11  # Master-0
 
-# macOS: use IPs from 'multipass list'
-ping <haproxy-ip>
-ping <master-0-ip>
-
 # From master to workers
-multipass exec master-0 -- ping <worker-0-ip>
+multipass exec master-0 -- ping 192.168.50.21
 ```
 
 ### Re-run Terraform without destroying
@@ -743,7 +694,7 @@ The virtual machine CPU architecture depends on your host hardware:
 ### Why This Matters
 
 Binaries compiled for one architecture won't run on another. This affects:
-- Go compiler downloads (needed to build cri-dockerd)
+- Go compiler downloads
 - Container images (must match VM architecture)
 - Any native binaries installed in VMs
 
@@ -793,12 +744,12 @@ scripts/
 | Feature | Windows | macOS |
 |---------|---------|-------|
 | Hypervisor | Hyper-V | HyperKit (Intel) / QEMU (ARM) |
-| **IP addressing** | **Static (192.168.50.x)** | **Dynamic (DHCP from Multipass)** |
-| Network setup | `setup-network.ps1` creates K8sSwitch | Automatic via Multipass |
+| **IP addressing** | **Static (192.168.50.x) via K8sSwitch** | **Static (192.168.50.x) via bridge alias** |
+| Network setup | `setup-network.ps1` creates K8sSwitch | `sudo ./setup-network.sh` adds bridge alias |
 | VM script | `multipass.ps1` (PowerShell) | `multipass.py` (Python) |
 | Go binary | Hardcoded amd64 | Auto-detected (arm64/amd64) |
 | Shell | PowerShell | Bash/zsh |
-| **Finding VM IPs** | **Predictable from variables.tf** | **`multipass list` or `multipass info <vm>`** |
+| **Finding VM IPs** | **Predictable from variables.tf** | **Predictable from variables.tf** |
 
 ### Apple Silicon Considerations
 
