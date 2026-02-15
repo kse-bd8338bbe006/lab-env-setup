@@ -480,3 +480,12 @@ Then update the image tag in the deployment repo so ArgoCD deploys the new versi
 ![alt text](image-3.png)
 
 Once the application shows **Synced** and **Healthy** in ArgoCD, the base lab configuration is ready for use.
+
+### Instructor access
+
+Invite the instructor (`torinks` on GitHub) to your organization as a **Member**. This is required for:
+
+- **Assessment** — reviewing your repository configurations, workflows, and deployment manifests
+- **Troubleshooting** — assisting with issues you may encounter during labs
+
+To invite: go to **Organization Settings → People → Invite member** and enter the instructor's GitHub username.
