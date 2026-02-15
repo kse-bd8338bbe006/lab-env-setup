@@ -420,3 +420,37 @@ version            1
 ```
 
 Once stored, the token is automatically picked up by the full chain described earlier: ESO fetches the credentials from Vault and creates the `ghcr-pull-secret` Kubernetes Secret. ArgoCD syncs the deployment manifests that reference this secret via `imagePullSecrets`. When a Pod is scheduled, kubelet reads the secret and passes the credentials to containerd to pull the image from GHCR. No manual `kubectl create secret` step is needed.
+
+### Configure self-hosted runner
+In the organization settings, go to ... and download and install runner for your platofrm according to the instructino. For the Windows do't run runner under Windows Service, just run it manually with your permissions.
+And also don't run runner 
+
+> **Note:** Runners registered at the organization level are automatically available to all repositories within the organization. You do not need to configure a separate runner for each repo — the `simple-go-service-a` workflow will pick up the org-level runner.
+
+To use self-hosted runners with public repositories, you must explicitly enable it in **Organization Settings → Actions → Runner groups → Default → Allow public repositories**. By default, GitHub disables this for security reasons.
+
+> **Security warning:** Enabling self-hosted runners on public repositories is a significant security risk. The runner executes code on your machine in the following cases:
+> - **`workflow_dispatch` / `push`** — anyone with write access to the repo can trigger a workflow that runs arbitrary code
+> - **`pull_request` from a fork** — if "Allow workflows from fork pull requests" is enabled in repo settings, a forked PR triggers the workflow. Even though fork PRs run with a read-only token and no access to secrets, the code still executes on the runner machine
+> - **`pull_request_target`** — runs in the context of the **base** repo (not the fork), so it has access to secrets. If the workflow checks out the PR branch (`actions/checkout@v4` with `ref: ${{ github.event.pull_request.head.ref }}`), an attacker's code runs with full secret access
+>
+> In any of these cases, an attacker could:
+> - Access files and credentials on the runner host
+> - Use the runner as a pivot point to access your local network
+> - Install persistent malware on the runner machine
+>
+> **Why we accept this risk in the lab:** GitHub-hosted runners require a paid plan (GitHub Team or Enterprise) for private repositories, and using them on public repos consumes limited free minutes. Self-hosted runners on students' own machines avoid these costs. To mitigate the risk:
+> - **Stop the runner when not in use** — only start it when you need to run a workflow, and stop it immediately after
+> - Do not store sensitive credentials on the runner machine
+> - Do not enable "Allow workflows from fork pull requests" in repository Actions settings
+
+### Build and deploy the service
+
+The CI pipeline is simplified for now — you trigger it manually via GitHub Actions.
+
+1. Go to your fork of `simple-go-service-a` on GitHub
+2. Navigate to the **Actions** tab
+3. Select the **Release** workflow from the left sidebar
+4. Click **Run workflow**, select the branch, and click **Run workflow**
+
+The workflow will build the container image and push it to GHCR. Once the image is available, ArgoCD will detect the updated deployment manifests and roll out the new version to the cluster automatically.
