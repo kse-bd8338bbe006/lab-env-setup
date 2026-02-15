@@ -418,3 +418,5 @@ deletion_time      n/a
 destroyed          false
 version            1
 ```
+
+Once stored, the token is automatically picked up by the full chain described earlier: ESO fetches the credentials from Vault and creates the `ghcr-pull-secret` Kubernetes Secret. ArgoCD syncs the deployment manifests that reference this secret via `imagePullSecrets`. When a Pod is scheduled, kubelet reads the secret and passes the credentials to containerd to pull the image from GHCR. No manual `kubectl create secret` step is needed.
