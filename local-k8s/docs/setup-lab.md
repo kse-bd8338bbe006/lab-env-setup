@@ -457,9 +457,26 @@ The workflow will build the container image and push it to GHCR. Once the image 
 
 After the workflow completes, verify the image was published:
 
-1. Go to the **Releases** page of your repository: `https://github.com/orgs/kse-bd8338bbe006/packages?ecosystem=container`
-2. Find the latest release and note the image tag (e.g., `v0.0.16` in my ase)
-3. Verify the image exists in GHCR at: `https://github.com/orgs/kse-bd8338bbe006/packages?ecosystem=container`
+1. Go to the **Releases** page of your repository: `https://github.com/<your-org>/simple-go-service-a/releases`
+2. Find the latest release and note the image tag (e.g., `v0.1.1`)
+3. Verify the image exists in GHCR at: `https://github.com/orgs/<your-org>/packages/container/simple-go-service-a`
 
-![alt text](image-2.png)
+Then update the image tag in the deployment repo so ArgoCD deploys the new version:
 
+1. Open `applications/simple-go-service-a/deployment.yaml` in your fork of `kse-labs-deployment`
+2. Find the `spec.template.spec.containers[].image` field and update the tag to match the release you just built:
+   ```yaml
+   spec:
+     template:
+       spec:
+         containers:
+           - name: simple-go-service-a
+             image: ghcr.io/<your-org>/simple-go-service-a:<new-tag>
+   ```
+3. Commit and push the change — ArgoCD will automatically sync and deploy the new version
+
+> **Tip:** You can also click **Refresh** on the application in the ArgoCD UI to trigger an immediate sync instead of waiting for the polling interval.
+
+![alt text](image-3.png)
+
+Once the application shows **Synced** and **Healthy** in ArgoCD, the base lab configuration is ready for use.
