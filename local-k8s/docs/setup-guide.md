@@ -1,4 +1,4 @@
-# Kubernetes Cluster Setup Guide
+# Lab Setup Guide
 
 ## Learning Objectives
 

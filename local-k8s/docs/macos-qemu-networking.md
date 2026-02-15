@@ -260,8 +260,8 @@ Expected output should show both `eth0` (DHCP) and `k8snet` (static 192.168.50.x
 
 ## Technical Details
 
-### Why Two Terraform Runs?
-
+### Why Two Terraform Runs (macOS)?
+ 
 The macOS setup requires running `terraform apply` twice:
 
 1. **First run**: Creates VMs with dual NICs, initializes Kubernetes, joins workers. Fails when trying to install helm charts because the host can't reach 192.168.50.10:6443 yet (bridge101 has no host alias).
