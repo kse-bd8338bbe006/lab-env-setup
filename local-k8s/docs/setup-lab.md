@@ -454,3 +454,9 @@ The CI pipeline is simplified for now — you trigger it manually via GitHub Act
 4. Click **Run workflow**, select the branch, and click **Run workflow**
 
 The workflow will build the container image and push it to GHCR. Once the image is available, ArgoCD will detect the updated deployment manifests and roll out the new version to the cluster automatically.
+
+After the workflow completes, verify the image was published:
+
+1. Go to the **Releases** page of your repository: `https://github.com/<your-org>/simple-go-service-a/releases`
+2. Find the latest release and note the image tag (e.g., `v0.1.1`)
+3. Verify the image exists in GHCR at: `https://github.com/orgs/<your-org>/packages/container/simple-go-service-a`
