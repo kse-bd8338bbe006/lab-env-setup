@@ -89,15 +89,44 @@ The cluster uses two ArgoCD projects — `infra` and `applications` — which ar
 
 ArgoCD **Projects** provide logical grouping of applications and are important from a security perspective. Each project defines a set of allowed Kubernetes resources (via RBAC) that applications within it can create. This enforces least-privilege access per project:
 
-- **`infra`** project — may need elevated permissions such as configuring admission controller webhooks, CRDs, ClusterRoles, and namespace-level policies
-- **`applications`** project — regular microservices only need a limited set of permissions:
+- **`infra`** project — for applications that require elevated permissions such as admission controller webhooks, CRDs, ClusterRoles, and namespace-level policies (e.g., OPA Gatekeeper, Falco, Fluent Bit)
+- **`applications`** project — regular microservices only need a limited set of permissions (can be extended later):
   - Deployments
   - Services
   - Ingresses
   - Secrets
   - ConfigMaps
 
-Projects are especially useful in multi-team environments where multiple teams deploy to the same cluster. By combining Kubernetes namespaces, RBAC, and ArgoCD project configurations, you can enforce the **least-privilege principle** — each team can only deploy to their own namespaces and create only the resource types they need. Project roles define permissions that restrict what resources can be created, patched, or deleted based on Kubernetes RBAC and the synced code. You can also grant a CI system specific access to project applications via JWT, or grant OIDC groups access to project applications.
+Projects are especially useful in multi-team environments where multiple teams deploy to the same cluster. By combining Kubernetes namespaces, RBAC, and ArgoCD project configurations, you can enforce the **least-privilege principle** — each team can only deploy to their own namespaces and create only the resource types they need.
+
+```mermaid
+%%{init: {"look": "handDrawn", "theme": "neutral"}}%%
+graph TB
+    subgraph ArgoCD["ArgoCD Server"]
+        PInfra["Project: infra"]
+        PApps["Project: applications"]
+    end
+
+    subgraph Permissions["Allowed Resources"]
+        InfraRes["CRDs, ClusterRoles,<br/>Webhooks, DaemonSets,<br/>Namespaces"]
+        AppsRes["Deployments, Services,<br/>Ingresses, Secrets,<br/>ConfigMaps"]
+    end
+
+    subgraph Cluster["Kubernetes Cluster"]
+        NSInfra["Namespace: infra"]
+        NSApps["Namespace: applications"]
+    end
+
+    PInfra -->|"can create"| InfraRes
+    PInfra -->|"deploys to"| NSInfra
+    PApps -->|"can create"| AppsRes
+    PApps -->|"deploys to"| NSApps
+
+    PInfra -.-x|"denied"| NSApps
+    PApps -.-x|"denied"| NSInfra
+```
+
+Project roles define permissions that restrict what resources can be created, patched, or deleted based on Kubernetes RBAC and the synced code. You can also grant a CI system specific access to project applications via JWT, or grant OIDC groups access to project applications.
 
 > **Recommendation:** Do not use the `default` project that ArgoCD creates out of the box — always create your own.
 
