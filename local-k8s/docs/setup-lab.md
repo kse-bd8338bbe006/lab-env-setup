@@ -131,6 +131,7 @@ Project roles define permissions that restrict what resources can be created, pa
 > **Recommendation:** Do not use the `default` project that ArgoCD creates out of the box — always create your own.
 
 
+### Repository configuration
 Go to settings / repo 
 http://argocd.192.168.50.10.nip.io/settings/repos
 and click on "connect repo"
