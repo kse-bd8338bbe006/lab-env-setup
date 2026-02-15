@@ -175,6 +175,37 @@ argocd repo add https://github.com/<your-org>/kse-labs-deployment.git \
   --grpc-web
 ```
 
+### ApplicationSets
+
+An ArgoCD **Application** is a single resource that maps one Git path to one Kubernetes namespace. If you have 10 services, you would need to create and maintain 10 Application manifests manually — each with its own repo URL, path, destination namespace, and sync policy. Adding a new service means writing another YAML file and applying it.
+
+An **ApplicationSet** solves this by generating Applications automatically from a template. Instead of defining each Application by hand, you define a pattern once and ArgoCD creates Applications for every match.
+
+In this lab, the `applications` ApplicationSet uses a **Git directory generator** — it scans a directory in the deployment repo and creates one Application per subdirectory:
+
+```yaml
+generators:
+  - git:
+      repoURL: https://github.com/<your-org>/kse-labs-deployment.git
+      directories:
+        - path: applications/*
+```
+
+```mermaid
+%%{init: {"look": "handDrawn", "theme": "neutral"}}%%
+graph LR
+    AS["ApplicationSet<br/>(template + generator)"] -->|"scans"| Dir["applications/"]
+    Dir --> A["simple-go-service-a/"]
+    Dir --> B["simple-go-service-b/"]
+    Dir --> C["..."]
+    A -->|"generates"| AppA["Application:<br/>simple-go-service-a"]
+    B -->|"generates"| AppB["Application:<br/>simple-go-service-b"]
+```
+
+To deploy a new service, you simply add a new subdirectory with its Kubernetes manifests — the ApplicationSet detects it and creates the corresponding Application automatically. No manual ArgoCD configuration is needed.
+
+The same pattern is used for the `infra` ApplicationSet, which scans `infra/*` for infrastructure components.
+
 ### Deploy via bootstrap
 
 The deployment repo uses a **bootstrap pattern** — a single ArgoCD Application that recursively syncs the `argocd/` directory, which contains all AppProjects and ApplicationSets. These in turn create the actual applications.
@@ -219,7 +250,35 @@ git add -A && git commit -m "Update org name" && git push
 
 ### Configure container registry pull secret
 
-Application images are stored in GitHub Container Registry (GHCR), which is private by default. Kubernetes needs credentials to pull images. The deployments reference an `imagePullSecret` named `ghcr-pull-secret`.
+Application images are stored in GitHub Container Registry (GHCR), which is private by default. Kubernetes needs credentials to pull images.
+
+When a Pod is scheduled, kubelet instructs the container runtime (containerd) to pull the specified image. If the registry requires authentication, containerd needs credentials. Kubernetes handles this through `imagePullSecrets` — a Pod-level field that references a Secret of type `kubernetes.io/dockerconfigjson`. Kubelet reads the secret and passes the credentials to containerd, which uses them to authenticate against the registry.
+
+The deployment manifests in this lab reference an `imagePullSecret` named `ghcr-pull-secret`:
+
+```yaml
+spec:
+  imagePullSecrets:
+    - name: ghcr-pull-secret
+  containers:
+    - name: app
+      image: ghcr.io/<your-org>/simple-go-service-a:latest
+```
+
+```mermaid
+%%{init: {"look": "handDrawn", "theme": "neutral"}}%%
+sequenceDiagram
+    participant K as kubelet
+    participant S as K8s Secret<br/>(ghcr-pull-secret)
+    participant C as containerd
+    participant R as ghcr.io
+
+    K->>S: read imagePullSecret
+    S-->>K: docker credentials
+    K->>C: pull image (with credentials)
+    C->>R: authenticate + pull
+    R-->>C: image layers
+```
 
 **Step 1:** Create a GitHub token with package read access. You can reuse your existing fine-grained token if you add the **`packages:read`** permission, or create a classic token with the `read:packages` scope.
 
