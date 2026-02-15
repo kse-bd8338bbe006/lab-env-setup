@@ -280,34 +280,7 @@ sequenceDiagram
     R-->>C: image layers
 ```
 
-**Step 1:** Create a GitHub token with package read access. You can reuse your existing fine-grained token if you add the **`packages:read`** permission, or create a classic token with the `read:packages` scope.
-
-**Step 2:** Create the secret in each application namespace:
-```bash
-kubectl create secret docker-registry ghcr-pull-secret \
-  -n applications \
-  --docker-server=ghcr.io \
-  --docker-username=x-access-token \
-  --docker-password=<your-github-token>
-```
-
-> **Note:** The namespace must exist before creating the secret. ArgoCD creates it automatically via `CreateNamespace=true` in the ApplicationSet sync policy, so run this command **after** the bootstrap has synced.
-
-For multiple services, repeat for each namespace or use a script:
-```bash
-TOKEN=<your-github-token>
-for NS in applications; do
-  kubectl create secret docker-registry ghcr-pull-secret \
-    -n "$NS" \
-    --docker-server=ghcr.io \
-    --docker-username=x-access-token \
-    --docker-password="$TOKEN"
-done
-```
-
-#### Secret management with Vault + ESO
-
-Manually creating secrets via `kubectl` works for initial setup, but doesn't scale and isn't GitOps-friendly. The lab cluster comes with **HashiCorp Vault** and **External Secrets Operator (ESO)** pre-installed via Terraform.
+The lab cluster comes with **HashiCorp Vault** and **External Secrets Operator (ESO)** pre-installed via Terraform, so you do not need to create secrets manually via `kubectl`.
 
 **How it works:**
 - **Vault** runs as a standalone server inside the cluster with **persistent file storage** (NFS-backed PVC). Secrets survive pod restarts. Terraform automatically initializes, unseals, and configures Vault during provisioning.
