@@ -50,9 +50,6 @@ fi
 
 echo "  Found k8snet bridge: $K8S_BRIDGE"
 
-# Remove any stale route that might conflict
-route delete -net "$STATIC_SUBNET" 2>/dev/null || true
-
 # Add gateway alias to the k8snet bridge
 # Check if alias already exists
 if ifconfig "$K8S_BRIDGE" | grep -q "inet $GATEWAY_IP "; then
