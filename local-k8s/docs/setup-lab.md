@@ -46,18 +46,18 @@ Verify each tool is installed by running its version command (e.g. `terraform ve
 
 ### Setup K8s
 
-Clone the lab environment repository:
+Clone your fork of the lab environment repository:
 ```bash
-git clone https://github.com/kse-bd8338bbe006/lab-env.git
+git clone https://github.com/<your-org>/lab-env-setup.git
 ```
 
 Based on your OS, follow the corresponding setup:
 
 | OS | Virtualization | Setup |
 |----|---------------|-------|
-| **macOS** | Multipass (QEMU) | `cd lab-env/local-k8s/scripts/macos && terraform init && terraform apply` |
-| **Windows Pro/Enterprise/Education** | Multipass (Hyper-V) | `cd lab-env\local-k8s\scripts\windows` then run `setup-network.ps1`, `terraform init`, `terraform apply` |
-| **Windows Home** | VirtualBox + Vagrant | `cd lab-env\local-k8s\scripts\virtual-box` then run `.\create-cluster.cmd` |
+| **macOS** | Multipass (QEMU) | `cd lab-env-setup/local-k8s/scripts/macos && terraform init && terraform apply` |
+| **Windows Pro/Enterprise/Education** | Multipass (Hyper-V) | `cd lab-env-setup\local-k8s\scripts\windows` then run `setup-network.ps1`, `terraform init`, `terraform apply` |
+| **Windows Home** | VirtualBox + Vagrant | `cd lab-env-setup\local-k8s\scripts\virtual-box` then run `.\create-cluster.cmd` |
 
 **macOS only:** After the first `terraform apply`, run `sudo ./setup-network.sh` to enable host connectivity to the cluster IPs, then re-run `terraform apply`.
 
@@ -85,24 +85,21 @@ Open the ArgoCD UI in your browser (e.g. `http://argocd.192.168.50.10.nip.io`) a
 - **Username:** `admin`
 - **Password:** the value from the command above
 
-First we need to create two project in argocd:
-- one with the name "infra" for infra related components like opa gatekeeper that we will use later
-- second one for the service. 
+The cluster uses two ArgoCD projects — `infra` and `applications` — which are automatically created by the bootstrap pattern (see [Deploy via bootstrap](#deploy-via-bootstrap)). You do not need to create them manually.
 
 ArgoCD **Projects** provide logical grouping of applications and are important from a security perspective. Each project defines a set of allowed Kubernetes resources (via RBAC) that applications within it can create. This enforces least-privilege access per project:
 
 - **`infra`** project — may need elevated permissions such as configuring admission controller webhooks, CRDs, ClusterRoles, and namespace-level policies
-- **`services`** project — regular microservices only need a limited set of permissions:
+- **`applications`** project — regular microservices only need a limited set of permissions:
   - Deployments
   - Services
   - Ingresses
   - Secrets
   - ConfigMaps
-Projects are especially useful in multi-team environments where multiple teams deploy to the same cluster. By combining Kubernetes namespaces, RBAC, and ArgoCD project configurations, you can enforce the **least-privilege principle** — each team can only deploy to their own namespaces and create only the resource types they need.
- The projects roles has set of the permissions that restrict what resources can be created/patched/deleted basd on the k8s RBAC and the code which is synced. 
- And we can grant CI system the specific access to project applications, it muse be associated with JWT. And we can use it to grant oidc groups a specific access to project applications
 
- Recomendation: do not use default project created argocd from the box, create your own that you will be use.
+Projects are especially useful in multi-team environments where multiple teams deploy to the same cluster. By combining Kubernetes namespaces, RBAC, and ArgoCD project configurations, you can enforce the **least-privilege principle** — each team can only deploy to their own namespaces and create only the resource types they need. Project roles define permissions that restrict what resources can be created, patched, or deleted based on Kubernetes RBAC and the synced code. You can also grant a CI system specific access to project applications via JWT, or grant OIDC groups access to project applications.
+
+> **Recommendation:** Do not use the `default` project that ArgoCD creates out of the box — always create your own.
 
 
 Go to settings / repo 

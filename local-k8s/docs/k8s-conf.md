@@ -66,9 +66,11 @@ flowchart TB
 
 | Component | Count | Memory | CPU | Disk | Static IP |
 |-----------|-------|--------|-----|------|-----------|
-| HAProxy | 1 | 4GB | 2 | 30GB | 192.168.50.10 |
+| HAProxy | 1 | 2–4GB* | 2 | 30GB | 192.168.50.10 |
 | Master | 1-3 | 4GB | 2 | 10GB | 192.168.50.11-13 |
 | Worker | 2 (configurable) | 3GB | 3 | 15GB | 192.168.50.21+ |
+
+> *HAProxy memory: 2GB on macOS, 4GB on Windows/VirtualBox.
 
 ---
 
@@ -156,7 +158,7 @@ flowchart TB
 
 | Range | Purpose |
 |-------|---------|
-| `10.244.0.0/16` | Pod network (Weave CNI) |
+| `10.244.0.0/16` | Pod network (Flannel on macOS, Weave on Windows/VirtualBox) |
 | `10.96.0.0/12` | Service ClusterIPs (default) |
 
 ### Virtual Network Architecture
@@ -241,7 +243,7 @@ flowchart TB
     end
 
     subgraph S4["4. KUBERNETES INIT"]
-        T4["master.tf via kube-init.sh<br/>- Pull K8s images<br/>- kubeadm init<br/>- Install Weave CNI<br/>- Generate join tokens"]
+        T4["master.tf via kube-init.sh<br/>- Pull K8s images<br/>- kubeadm init<br/>- Install CNI (Flannel/Weave)<br/>- Generate join tokens"]
     end
 
     subgraph S5["5. WORKER JOINING"]
@@ -297,8 +299,7 @@ kubeadm init \
   --upload-certs \
   --pod-network-cidr 10.244.0.0/16 \
   --apiserver-advertise-address $LOCAL_IP \
-  --control-plane-endpoint $HAPROXY_IP:6443 \
-  --cri-socket unix:///var/run/containerd/containerd.sock
+  --control-plane-endpoint $HAPROXY_IP:6443
 ```
 
 ### Flag Explanation
@@ -306,10 +307,11 @@ kubeadm init \
 | Flag | Value | Purpose |
 |------|-------|---------|
 | `--upload-certs` | - | Uploads control plane certificates to a kubeadm-certs Secret. Allows additional masters to join without manual certificate distribution. Certificates are encrypted and auto-deleted after 2 hours. |
-| `--pod-network-cidr` | `10.244.0.0/16` | IP range for pod networking. This is the default for Flannel CNI (we use Weave which also accepts this). Must not overlap with node network. |
+| `--pod-network-cidr` | `10.244.0.0/16` | IP range for pod networking. This is the default for Flannel and Weave CNI plugins. Must not overlap with node network. |
 | `--apiserver-advertise-address` | `$LOCAL_IP` | IP address the API server advertises to cluster members. Uses the node's static IP on k8snet. |
 | `--control-plane-endpoint` | `$HAPROXY_IP:6443` | **Critical for HA:** Stable endpoint for the control plane. Points to HAProxy, not a single master. All nodes use this to reach the API. |
-| `--cri-socket` | `unix:///var/run/containerd/containerd.sock` | Container Runtime Interface socket. Uses containerd directly as the CRI runtime. |
+
+> **Note:** No `--cri-socket` flag is needed — kubeadm auto-detects containerd at its default socket path.
 
 ### Why Each Flag Matters
 
@@ -477,6 +479,14 @@ write_files:
       net.bridge.bridge-nf-call-ip6tables=1   # Bridge traffic to ip6tables
       net.bridge.bridge-nf-call-iptables=1    # Bridge traffic to iptables
 
+  # 4. containerd configuration
+  - path: /etc/containerd/config.toml
+    content: |
+      version = 2
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+        runtime_type = "io.containerd.runc.v2"
+        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+          SystemdCgroup = true
 ```
 
 **Critical configurations explained:**
@@ -486,6 +496,7 @@ write_files:
 | `99-static.yaml` | Gives each node a predictable IP address |
 | `k8s.conf` (modules) | Kubernetes networking requires these kernel modules |
 | `k8s.conf` (sysctl) | Enables IP forwarding for pod-to-pod traffic |
+| `config.toml` | Configures containerd to use systemd cgroup driver (must match kubelet) |
 
 #### Section 4: Runtime Commands
 
@@ -618,16 +629,18 @@ flowchart LR
     style containers fill:#c8e6c9
 ```
 
-### Weave Net CNI
+### CNI Plugin
 
-**What:** Container Network Interface plugin
+**What:** Container Network Interface plugin for pod networking
 
-**Provides:**
-- Pod-to-pod communication across nodes
-- Network policy enforcement
-- Automatic IP address management (IPAM)
+The CNI plugin differs by platform:
 
-**Pod network:** `10.244.0.0/16` (65,534 pod IPs available)
+| Platform | CNI | Why |
+|----------|-----|-----|
+| macOS | **Flannel** | Lightweight, works well with ARM64 (Apple Silicon) |
+| Windows / VirtualBox | **Weave Net** v2.8.1 | Mature, supports network policies |
+
+Both use the same pod CIDR: `10.244.0.0/16` (65,534 pod IPs available).
 
 ---
 
@@ -746,10 +759,11 @@ scripts/
 | Hypervisor | Hyper-V | HyperKit (Intel) / QEMU (ARM) |
 | **IP addressing** | **Static (192.168.50.x) via K8sSwitch** | **Static (192.168.50.x) via bridge alias** |
 | Network setup | `setup-network.ps1` creates K8sSwitch | `sudo ./setup-network.sh` adds bridge alias |
+| **CNI plugin** | **Weave Net v2.8.1** | **Flannel** |
+| **HAProxy memory** | **4GB** | **2GB** |
 | VM script | `multipass.ps1` (PowerShell) | `multipass.py` (Python) |
 | Go binary | Hardcoded amd64 | Auto-detected (arm64/amd64) |
 | Shell | PowerShell | Bash/zsh |
-| **Finding VM IPs** | **Predictable from variables.tf** | **Predictable from variables.tf** |
 
 ### Apple Silicon Considerations
 
