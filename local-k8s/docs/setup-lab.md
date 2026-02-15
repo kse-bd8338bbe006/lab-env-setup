@@ -14,32 +14,35 @@ https://github.com/kse-bd8338bbe006/kse-labs-trusted-workflows.git
 https://github.com/kse-bd8338bbe006/simple-go-service-a.git
 ```
 
-For **each** repository, create a new **empty** repository with the **same name** in your organization via GitHub UI (no README, no .gitignore).
+Make all repos public so they are accessible to the instructor.
+From now on, you will work with the forked repositories independently. These repositories will be used for all labs instead of the originals in `kse-bd8338bbe006`. This allows you to make changes, configure settings, and experiment freely without affecting the course source repositories.
 
-Then run this script to re-host all 3 repos at once (replace `YOUR_ORG` with your organization name):
+Fill in the [table](https://docs.google.com/spreadsheets/d/10uZwVNxqzDPoXXrlHGP_1yV-OhnfRr5ENmOwVM33M70/edit?usp=sharing) so that the organization name and the student it belongs to are known.
+
+### Prerequisites
+
+Install the required tools before proceeding. The exact set depends on your OS.
+
+| Tool | Required | macOS | Windows |
+|------|----------|-------|---------|
+| **Git** | All | `brew install git` | [git-scm.com/downloads](https://git-scm.com/downloads/win) |
+| **Multipass** | macOS, Windows Pro/Ent/Edu | `brew install --cask multipass` | [multipass.run/download/windows](https://multipass.run/download/windows) |
+| **Terraform** | All | `brew tap hashicorp/tap && brew install hashicorp/tap/terraform` | [developer.hashicorp.com/terraform/downloads](https://developer.hashicorp.com/terraform/downloads) |
+| **kubectl** | All (recommended) | `brew install kubectl` | `choco install kubernetes-cli` or [direct download](https://dl.k8s.io/release/v1.32.0/bin/windows/amd64/kubectl.exe) |
+| **VirtualBox** | Windows Home only | — | [virtualbox.org/wiki/Downloads](https://www.virtualbox.org/wiki/Downloads) |
+| **Vagrant** | Windows Home only | — | [developer.hashicorp.com/vagrant/downloads](https://developer.hashicorp.com/vagrant/downloads) |
+
+You also need to generate an SSH key pair that Terraform will use to connect to the VMs:
 
 ```bash
-ORG=YOUR_ORG
+# macOS / Linux
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/kse_ci_cd_sec_id_rsa -N ""
 
-for REPO in kse-labs-deployment kse-labs-trusted-workflows simple-go-service-a; do
-  cd "$REPO"
-  rm -rf .git
-  git init
-  git add .
-  git commit -m "Initial commit"
-  git remote add origin "https://github.com/$ORG/$REPO.git"
-  git push -u origin main
-  cd ..
-done
+# Windows (PowerShell)
+ssh-keygen -t rsa -b 4096 -f $env:USERPROFILE\.ssh\kse_ci_cd_sec_id_rsa -N '""'
 ```
 
-### Instructor access
-
-Once your organization and repositories are set up:
-1. Submit your organization name to the instructor.
-2. Invite the instructor's GitHub account as an **outside collaborator** (with read access) to your organization. This allows the instructor to review your commit history, workflow runs, and overall progress.
-
-> **Note:** In future labs we will transition to **GitHub Classroom** (classroom.github.com), which auto-creates repos from templates per student, tracks progress, and provides a grading dashboard.
+Verify each tool is installed by running its version command (e.g. `terraform version`, `multipass version`, `kubectl version --client`).
 
 ### Setup K8s
 

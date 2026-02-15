@@ -465,47 +465,22 @@ CoreDNS is running at https://192.168.50.10:6443/api/v1/namespaces/kube-system/s
 
 ## 7. Accessing Applications
 
-The cluster includes pre-installed applications accessible via web browser.
+The cluster includes pre-installed applications accessible via `http://<app>.<HAPROXY_IP>.nip.io`. The HAProxy IP depends on your setup: `192.168.50.10` (Hyper-V / macOS) or `192.168.56.10` (VirtualBox).
 
-### 7.1 Application URLs
+| Application | URL pattern | Default Credentials |
+|-------------|-------------|---------------------|
+| HAProxy Stats | `http://<HAPROXY_IP>/stats` | hapuser / password!1234 |
+| ArgoCD | `http://argocd.<HAPROXY_IP>.nip.io` | admin / (see below) |
+| Grafana | `http://grafana.<HAPROXY_IP>.nip.io` | admin / admin |
+| Prometheus | `http://prometheus.<HAPROXY_IP>.nip.io` | — |
+| AlertManager | `http://alertmanager.<HAPROXY_IP>.nip.io` | — |
 
-**Windows Hyper-V (192.168.50.x):**
-
-| Application | URL | Default Credentials |
-|-------------|-----|---------------------|
-| HAProxy Stats | http://192.168.50.10/stats | hapuser / password!1234 |
-| ArgoCD | http://argocd.192.168.50.10.nip.io | admin / (see below) |
-| Grafana | http://grafana.192.168.50.10.nip.io | admin / admin |
-| Prometheus | http://prometheus.192.168.50.10.nip.io | - |
-| AlertManager | http://alertmanager.192.168.50.10.nip.io | - |
-
-**Windows VirtualBox (192.168.56.x):**
-
-| Application | URL | Default Credentials |
-|-------------|-----|---------------------|
-| HAProxy Stats | http://192.168.56.10:8404/stats | admin / admin |
-| ArgoCD | http://argocd.192.168.56.10.nip.io | admin / (see below) |
-| Grafana | http://grafana.192.168.56.10.nip.io | admin / admin |
-| Prometheus | http://prometheus.192.168.56.10.nip.io | - |
-| AlertManager | http://alertmanager.192.168.56.10.nip.io | - |
-
-**macOS (Static IPs — same as Windows Hyper-V):**
-
-| Application | URL | Default Credentials |
-|-------------|-----|---------------------|
-| HAProxy Stats | http://192.168.50.10/stats | hapuser / password!1234 |
-| ArgoCD | http://argocd.192.168.50.10.nip.io | admin / (see below) |
-| Grafana | http://grafana.192.168.50.10.nip.io | admin / admin |
-| Prometheus | http://prometheus.192.168.50.10.nip.io | - |
-| AlertManager | http://alertmanager.192.168.50.10.nip.io | - |
-
-> **Prerequisite:** Run `sudo ./setup-network.sh` after `terraform apply` to enable host access to 192.168.50.x.
-
-### 7.2 Retrieve ArgoCD Password
-
+Retrieve the ArgoCD admin password:
 ```bash
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
 ```
+
+> **macOS:** Run `sudo ./setup-network.sh` after `terraform apply` to enable host access to the cluster IPs.
 
 ---
 
