@@ -457,6 +457,9 @@ The workflow will build the container image and push it to GHCR. Once the image 
 
 After the workflow completes, verify the image was published:
 
-1. Go to the **Releases** page of your repository: `https://github.com/<your-org>/simple-go-service-a/releases`
-2. Find the latest release and note the image tag (e.g., `v0.1.1`)
-3. Verify the image exists in GHCR at: `https://github.com/orgs/<your-org>/packages/container/simple-go-service-a`
+1. Go to the **Releases** page of your repository: `https://github.com/orgs/kse-bd8338bbe006/packages?ecosystem=container`
+2. Find the latest release and note the image tag (e.g., `v0.0.16` in my ase)
+3. Verify the image exists in GHCR at: `https://github.com/orgs/kse-bd8338bbe006/packages?ecosystem=container`
+
+![alt text](image-2.png)
+
