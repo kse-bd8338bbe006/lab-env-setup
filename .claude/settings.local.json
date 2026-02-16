@@ -4,7 +4,8 @@
       "Bash(terraform init:*)",
       "Bash(terraform plan:*)",
       "Bash(terraform apply:*)",
-      "Bash(terraform taint:*)"
+      "Bash(terraform taint:*)",
+      "Bash(ls:*)"
     ]
   }
 }

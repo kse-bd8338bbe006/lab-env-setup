@@ -25,7 +25,9 @@ $VMs = [ordered]@{
 $VBoxManage = Join-Path $env:ProgramFiles "Oracle\VirtualBox\VBoxManage.exe"
 $ScriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Timestamp  = Get-Date -Format "yyyyMMdd_HHmmss"
-$LogFile    = Join-Path $ScriptDir "create-cluster_$Timestamp.log"
+$LogDir     = Join-Path $ScriptDir "logs"
+if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
+$LogFile    = Join-Path $LogDir "create-cluster_$Timestamp.log"
 
 # ── Logging helpers ────────────────────────────────────────────────────────────
 
