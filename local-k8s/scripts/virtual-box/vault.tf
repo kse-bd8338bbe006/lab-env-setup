@@ -145,8 +145,9 @@ resource "null_resource" "vault_init" {
   depends_on = [helm_release.vault]
 
   provisioner "local-exec" {
+    interpreter = ["bash", "-c"]
     command = <<-EOT
-      KUBECONFIG=${pathexpand("~/.kube/config-virtualbox")}
+      KUBECONFIG="$HOME/.kube/config-virtualbox"
 
       echo "Waiting for Vault pod to be running..."
       for i in $(seq 1 60); do
@@ -160,14 +161,14 @@ resource "null_resource" "vault_init" {
 
       # Check if already initialized
       INIT_STATUS=$(kubectl --kubeconfig $KUBECONFIG -n vault exec vault-0 -- vault status -format=json 2>/dev/null \
-        | python3 -c "import sys,json; print(json.load(sys.stdin)['initialized'])" 2>/dev/null || echo "false")
+        | python -c "import sys,json; print(json.load(sys.stdin)['initialized'])" 2>/dev/null || echo "false")
 
       if [ "$INIT_STATUS" = "False" ] || [ "$INIT_STATUS" = "false" ]; then
         echo "Initializing Vault..."
         INIT_OUTPUT=$(kubectl --kubeconfig $KUBECONFIG -n vault exec vault-0 -- vault operator init -key-shares=1 -key-threshold=1 -format=json)
 
-        UNSEAL_KEY=$(echo "$INIT_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['unseal_keys_b64'][0])")
-        ROOT_TOKEN=$(echo "$INIT_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['root_token'])")
+        UNSEAL_KEY=$(echo "$INIT_OUTPUT" | python -c "import sys,json; print(json.load(sys.stdin)['unseal_keys_b64'][0])")
+        ROOT_TOKEN=$(echo "$INIT_OUTPUT" | python -c "import sys,json; print(json.load(sys.stdin)['root_token'])")
 
         echo "Unsealing Vault..."
         kubectl --kubeconfig $KUBECONFIG -n vault exec vault-0 -- vault operator unseal "$UNSEAL_KEY"
@@ -193,7 +194,7 @@ resource "null_resource" "vault_init" {
 
         # Unseal if needed
         SEALED=$(kubectl --kubeconfig $KUBECONFIG -n vault exec vault-0 -- vault status -format=json 2>/dev/null \
-          | python3 -c "import sys,json; print(json.load(sys.stdin)['sealed'])" 2>/dev/null || echo "true")
+          | python -c "import sys,json; print(json.load(sys.stdin)['sealed'])" 2>/dev/null || echo "true")
 
         if [ "$SEALED" = "True" ] || [ "$SEALED" = "true" ]; then
           echo "Unsealing Vault..."
@@ -219,8 +220,9 @@ resource "null_resource" "vault_cluster_secret_store" {
   ]
 
   provisioner "local-exec" {
+    interpreter = ["bash", "-c"]
     command = <<-EOT
-      kubectl --kubeconfig ${pathexpand("~/.kube/config-virtualbox")} apply -f - <<'EOF'
+      kubectl --kubeconfig "$HOME/.kube/config-virtualbox" apply -f - <<'EOF'
       apiVersion: external-secrets.io/v1beta1
       kind: ClusterSecretStore
       metadata:
