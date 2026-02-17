@@ -15,6 +15,11 @@ multipass/haproxy_*.cfg
 multipass/cloud-init-*.yaml
 windows/haproxy_*.cfg
 windows/cloud-init-*.yaml
+windows/.terraform/
+windows/.terraform.lock.hcl
+windows/.terraform.tfstate.lock.info
+windows/terraform.tfstate
+windows/terraform.tfstate.backup
 macos/haproxy_*.cfg
 macos/cloud-init-*.yaml
 virtual-box/haproxy_*.cfg
