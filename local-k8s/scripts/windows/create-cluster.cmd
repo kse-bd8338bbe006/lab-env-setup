@@ -1,6 +1,7 @@
 @echo off
 cd /d "%~dp0"
 
+del "%TEMP%\hosts_ip.txt" 2>nul
 multipass set local.driver=hyperv
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup-network.ps1"
 
