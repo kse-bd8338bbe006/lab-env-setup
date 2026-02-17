@@ -5,7 +5,9 @@
       "Bash(terraform plan:*)",
       "Bash(terraform apply:*)",
       "Bash(terraform taint:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(multipass exec:*)",
+      "Bash(MSYS_NO_PATHCONV=1 multipass exec:*)"
     ]
   }
 }

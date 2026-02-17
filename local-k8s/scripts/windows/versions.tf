@@ -28,11 +28,11 @@ terraform {
 }
 
 provider "kubernetes" {
-  config_path = pathexpand("~/.kube/config-multipass")
+  config_path = fileexists(pathexpand("~/.kube/config-multipass")) ? pathexpand("~/.kube/config-multipass") : null
 }
 
 provider "helm" {
   kubernetes {
-    config_path = pathexpand("~/.kube/config-multipass")
+    config_path = fileexists(pathexpand("~/.kube/config-multipass")) ? pathexpand("~/.kube/config-multipass") : null
   }
 }
