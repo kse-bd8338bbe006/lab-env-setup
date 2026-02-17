@@ -29,6 +29,7 @@ terraform {
 
 provider "kubernetes" {
   config_path = fileexists(pathexpand("~/.kube/config-multipass")) ? pathexpand("~/.kube/config-multipass") : null
+  insecure    = true
 }
 
 provider "helm" {
