@@ -13,9 +13,15 @@ $init_data = $input_data.init
 $network_switch = $input_data.network_switch
 $mac_address = $input_data.mac_address
 
+$ScriptDir = Split-Path -Parent $PSScriptRoot  # parent of script/ = windows/
+$LogDir = Join-Path $ScriptDir "logs"
+if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
+$LogFile = Join-Path $LogDir "multipass.log"
+
 function Write-Log {
     param($Message)
-    Add-Content -Path "multipass.log" -Value $Message
+    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Add-Content -Path $LogFile -Value "[$ts] $Message"
 }
 
 function Find-VM {
@@ -50,26 +56,37 @@ function New-VM {
         $DiskSize,
         $CloudInitData
     )
-    
+
     # Create temporary file for cloud-init data
     $tempFile = [System.IO.Path]::GetTempFileName()
     Set-Content -Path $tempFile -Value $CloudInitData
-    
+
     try {
-        $networkArg = if ($network_switch -and $mac_address) {
-            "--network name=$network_switch,mode=manual,mac=$mac_address"
+        # Build argument list properly (avoid Invoke-Expression parsing issues)
+        $launchArgs = @("launch", $image, "--name", $VMName, "--cpus", $CPUCount,
+                  "--disk", $DiskSize, "--memory", $Memory, "--timeout", "600",
+                  "--cloud-init", $tempFile)
+        if ($network_switch -and $mac_address) {
+            $launchArgs += @("--network", "name=$network_switch,mode=manual,mac=$mac_address")
         } elseif ($network_switch) {
-            "--network name=$network_switch,mode=manual"
-        } else { "" }
-        $imageArg = if ($image) { $image } else { "" }
-        $cmd = "multipass launch $imageArg --name $VMName --cpus $CPUCount --disk $DiskSize --memory $Memory --timeout 600 $networkArg --cloud-init `"$tempFile`""
-        Write-Log "Executing: $cmd"
-        
-        $result = Invoke-Expression $cmd 2>&1
-        Write-Log "Result: $result"
-        
+            $launchArgs += @("--network", "name=$network_switch,mode=manual")
+        }
+
+        Write-Log "Executing: multipass $($launchArgs -join ' ')"
+
+        $output = & multipass @launchArgs 2>&1
+        $exitCode = $LASTEXITCODE
+        Write-Log "Exit code: $exitCode"
+        Write-Log "Output: $output"
+
+        if ($exitCode -ne 0) {
+            $errMsg = ($output | Out-String).Trim()
+            Write-Log "ERROR: multipass launch failed: $errMsg"
+            throw "multipass launch failed (exit code $exitCode): $errMsg"
+        }
+
         Remove-Item -Path $tempFile -Force
-        
+
         return Find-VM -VMName $VMName
     }
     catch {
