@@ -145,68 +145,78 @@ resource "null_resource" "vault_init" {
   depends_on = [helm_release.vault]
 
   provisioner "local-exec" {
+    interpreter = ["pwsh", "-Command"]
     command = <<-EOT
-      KUBECONFIG=${pathexpand("~/.kube/config-multipass")}
+      $KUBECONFIG = "${pathexpand("~/.kube/config-multipass")}"
 
-      echo "Waiting for Vault pod to be running..."
-      for i in $(seq 1 60); do
-        POD_STATUS=$(kubectl --kubeconfig $KUBECONFIG -n vault get pod vault-0 -o jsonpath='{.status.phase}' 2>/dev/null)
-        if [ "$POD_STATUS" = "Running" ]; then
-          break
-        fi
-        sleep 2
-      done
-      sleep 10
+      Write-Host "Waiting for Vault pod to be running..."
+      for ($i = 1; $i -le 60; $i++) {
+        $POD_STATUS = kubectl --kubeconfig $KUBECONFIG -n vault get pod vault-0 -o jsonpath='{.status.phase}' 2>$null
+        if ($POD_STATUS -eq "Running") { break }
+        Start-Sleep -Seconds 2
+      }
+      Start-Sleep -Seconds 10
 
       # Check if already initialized
-      INIT_STATUS=$(kubectl --kubeconfig $KUBECONFIG -n vault exec vault-0 -- vault status -format=json 2>/dev/null \
-        | python3 -c "import sys,json; print(json.load(sys.stdin)['initialized'])" 2>/dev/null || echo "false")
+      try {
+        $statusJson = kubectl --kubeconfig $KUBECONFIG -n vault exec vault-0 -- vault status -format=json 2>$null
+        $INIT_STATUS = ($statusJson | ConvertFrom-Json).initialized
+      } catch {
+        $INIT_STATUS = $false
+      }
 
-      if [ "$INIT_STATUS" = "False" ] || [ "$INIT_STATUS" = "false" ]; then
-        echo "Initializing Vault..."
-        INIT_OUTPUT=$(kubectl --kubeconfig $KUBECONFIG -n vault exec vault-0 -- vault operator init -key-shares=1 -key-threshold=1 -format=json)
+      if (-not $INIT_STATUS) {
+        Write-Host "Initializing Vault..."
+        $INIT_OUTPUT = kubectl --kubeconfig $KUBECONFIG -n vault exec vault-0 -- vault operator init -key-shares=1 -key-threshold=1 -format=json
+        $initData = $INIT_OUTPUT | ConvertFrom-Json
 
-        UNSEAL_KEY=$(echo "$INIT_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['unseal_keys_b64'][0])")
-        ROOT_TOKEN=$(echo "$INIT_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['root_token'])")
+        $UNSEAL_KEY = $initData.unseal_keys_b64[0]
+        $ROOT_TOKEN = $initData.root_token
 
-        echo "Unsealing Vault..."
-        kubectl --kubeconfig $KUBECONFIG -n vault exec vault-0 -- vault operator unseal "$UNSEAL_KEY"
+        Write-Host "Unsealing Vault..."
+        kubectl --kubeconfig $KUBECONFIG -n vault exec vault-0 -- vault operator unseal $UNSEAL_KEY
 
-        echo "Storing unseal key and root token as K8s secret..."
-        kubectl --kubeconfig $KUBECONFIG -n vault create secret generic vault-unseal-key \
-          --from-literal=key="$UNSEAL_KEY" \
-          --from-literal=root-token="$ROOT_TOKEN" \
+        Write-Host "Storing unseal key and root token as K8s secret..."
+        kubectl --kubeconfig $KUBECONFIG -n vault create secret generic vault-unseal-key `
+          --from-literal=key="$UNSEAL_KEY" `
+          --from-literal=root-token="$ROOT_TOKEN" `
           --dry-run=client -o yaml | kubectl --kubeconfig $KUBECONFIG apply -f -
 
-        echo "Creating vault-token secret for ESO..."
-        kubectl --kubeconfig $KUBECONFIG -n vault create secret generic vault-token \
-          --from-literal=token="$ROOT_TOKEN" \
+        Write-Host "Creating vault-token secret for ESO..."
+        kubectl --kubeconfig $KUBECONFIG -n vault create secret generic vault-token `
+          --from-literal=token="$ROOT_TOKEN" `
           --dry-run=client -o yaml | kubectl --kubeconfig $KUBECONFIG apply -f -
 
-        echo "Enabling KV v2 secrets engine..."
-        sleep 5
+        Write-Host "Enabling KV v2 secrets engine..."
+        Start-Sleep -Seconds 5
         kubectl --kubeconfig $KUBECONFIG -n vault exec vault-0 -- sh -c "VAULT_TOKEN=$ROOT_TOKEN vault secrets enable -path=secret kv-v2"
 
-        echo "Vault initialized and configured successfully"
-      else
-        echo "Vault is already initialized"
+        Write-Host "Vault initialized and configured successfully"
+      } else {
+        Write-Host "Vault is already initialized"
 
         # Unseal if needed
-        SEALED=$(kubectl --kubeconfig $KUBECONFIG -n vault exec vault-0 -- vault status -format=json 2>/dev/null \
-          | python3 -c "import sys,json; print(json.load(sys.stdin)['sealed'])" 2>/dev/null || echo "true")
+        try {
+          $statusJson = kubectl --kubeconfig $KUBECONFIG -n vault exec vault-0 -- vault status -format=json 2>$null
+          $SEALED = ($statusJson | ConvertFrom-Json).sealed
+        } catch {
+          $SEALED = $true
+        }
 
-        if [ "$SEALED" = "True" ] || [ "$SEALED" = "true" ]; then
-          echo "Unsealing Vault..."
-          UNSEAL_KEY=$(kubectl --kubeconfig $KUBECONFIG -n vault get secret vault-unseal-key -o jsonpath='{.data.key}' | base64 -d)
-          kubectl --kubeconfig $KUBECONFIG -n vault exec vault-0 -- vault operator unseal "$UNSEAL_KEY"
-        fi
+        if ($SEALED) {
+          Write-Host "Unsealing Vault..."
+          $UNSEAL_KEY = kubectl --kubeconfig $KUBECONFIG -n vault get secret vault-unseal-key -o jsonpath='{.data.key}'
+          $UNSEAL_KEY = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($UNSEAL_KEY))
+          kubectl --kubeconfig $KUBECONFIG -n vault exec vault-0 -- vault operator unseal $UNSEAL_KEY
+        }
 
         # Ensure vault-token secret exists for ESO
-        ROOT_TOKEN=$(kubectl --kubeconfig $KUBECONFIG -n vault get secret vault-unseal-key -o jsonpath='{.data.root-token}' | base64 -d)
-        kubectl --kubeconfig $KUBECONFIG -n vault create secret generic vault-token \
-          --from-literal=token="$ROOT_TOKEN" \
+        $ROOT_TOKEN = kubectl --kubeconfig $KUBECONFIG -n vault get secret vault-unseal-key -o jsonpath='{.data.root-token}'
+        $ROOT_TOKEN = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($ROOT_TOKEN))
+        kubectl --kubeconfig $KUBECONFIG -n vault create secret generic vault-token `
+          --from-literal=token="$ROOT_TOKEN" `
           --dry-run=client -o yaml | kubectl --kubeconfig $KUBECONFIG apply -f -
-      fi
+      }
     EOT
   }
 }
@@ -219,8 +229,9 @@ resource "null_resource" "vault_cluster_secret_store" {
   ]
 
   provisioner "local-exec" {
+    interpreter = ["pwsh", "-Command"]
     command = <<-EOT
-      kubectl --kubeconfig ${pathexpand("~/.kube/config-multipass")} apply -f - <<'EOF'
+      @"
       apiVersion: external-secrets.io/v1beta1
       kind: ClusterSecretStore
       metadata:
@@ -236,7 +247,7 @@ resource "null_resource" "vault_cluster_secret_store" {
                 name: "vault-token"
                 namespace: "vault"
                 key: "token"
-      EOF
+      "@ | kubectl --kubeconfig "${pathexpand("~/.kube/config-multipass")}" apply -f -
     EOT
   }
 }
