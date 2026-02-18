@@ -355,35 +355,40 @@ if ($failed.Count -gt 0) {
     Write-Host "`nWARNING: $($failed.Count) VM(s) failed. Continuing with Terraform..." -ForegroundColor Yellow
 }
 
-# Terraform deployment
+# Terraform deployment - infra/ creates cluster and kubeconfig, apps/ deploys helm charts
 $ErrorActionPreference = "Continue"
 
-Write-Step "5/6" "Initializing Terraform..."
-$tfInitCode = Invoke-LoggedCommand -Command "terraform" -Arguments @("init")
+Write-Step "5/8" "Initializing infrastructure Terraform..."
+$tfInitCode = Invoke-LoggedCommand -Command "terraform" -Arguments @("-chdir=infra", "init")
 if ($tfInitCode -ne 0) {
-    Write-Fail "terraform init failed (exit code $tfInitCode). See log: $LogFile"
+    Write-Fail "terraform init (infra) failed (exit code $tfInitCode). See log: $LogFile"
     exit 1
 }
-Write-Ok "Terraform initialized."
+Write-Ok "Infrastructure Terraform initialized."
 
-Write-Step "6/7" "Deploying infrastructure with Terraform (first pass)..."
-# First apply: creates VMs, cluster, and kubeconfig file
-# Expected to partially fail: kubernetes/helm resources fail because kubeconfig
-# does not exist at plan time (fileexists returns false). This is normal.
-$tfApplyCode = Invoke-LoggedCommand -Command "terraform" -Arguments @("apply", "-auto-approve") -TimeoutSeconds 1200
+Write-Step "6/8" "Deploying infrastructure with Terraform..."
+$tfApplyCode = Invoke-LoggedCommand -Command "terraform" -Arguments @("-chdir=infra", "apply", "-auto-approve") -TimeoutSeconds 1200
 if ($tfApplyCode -ne 0) {
-    Write-Info "First pass completed with errors (expected - kubeconfig not yet available for kubernetes/helm resources)."
-}
-Write-Ok "First Terraform pass complete."
-
-Write-Step "7/7" "Deploying applications with Terraform (second pass)..."
-# Second apply: kubernetes/helm providers detect kubeconfig and deploy resources
-$tfApplyCode = Invoke-LoggedCommand -Command "terraform" -Arguments @("apply", "-auto-approve") -TimeoutSeconds 1200
-if ($tfApplyCode -ne 0) {
-    Write-Fail "terraform apply (second pass) failed (exit code $tfApplyCode). See log: $LogFile"
+    Write-Fail "terraform apply (infra) failed (exit code $tfApplyCode). See log: $LogFile"
     exit 1
 }
-Write-Ok "Second Terraform pass complete."
+Write-Ok "Infrastructure deployed (cluster ready, kubeconfig available)."
+
+Write-Step "7/8" "Initializing applications Terraform..."
+$tfInitCode = Invoke-LoggedCommand -Command "terraform" -Arguments @("-chdir=apps", "init")
+if ($tfInitCode -ne 0) {
+    Write-Fail "terraform init (apps) failed (exit code $tfInitCode). See log: $LogFile"
+    exit 1
+}
+Write-Ok "Applications Terraform initialized."
+
+Write-Step "8/8" "Deploying applications with Terraform..."
+$tfApplyCode = Invoke-LoggedCommand -Command "terraform" -Arguments @("-chdir=apps", "apply", "-auto-approve") -TimeoutSeconds 1200
+if ($tfApplyCode -ne 0) {
+    Write-Fail "terraform apply (apps) failed (exit code $tfApplyCode). See log: $LogFile"
+    exit 1
+}
+Write-Ok "Applications deployed."
 
 # Copy kubeconfig to default location
 $kubeConfig = Join-Path $env:USERPROFILE ".kube\config-virtualbox"

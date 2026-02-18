@@ -1,23 +1,28 @@
 # Reset script for Windows (VirtualBox)
-# Deletes all Multipass VMs and cleans up generated files
+# Deletes all Vagrant VMs and cleans up generated files
 
-Write-Host "Deleting all Multipass VMs..." -ForegroundColor Yellow
-multipass delete --all
-multipass purge
+Write-Host "Destroying Vagrant VMs..." -ForegroundColor Yellow
+vagrant destroy -f
 
 Write-Host "Cleaning up generated files..." -ForegroundColor Yellow
 
 # Remove cloud-init files
-Remove-Item -Path "cloud-init-*.yaml" -ErrorAction SilentlyContinue
-Remove-Item -Path "haproxy_*.cfg" -ErrorAction SilentlyContinue
+Remove-Item -Path "infra\cloud-init-*.yaml" -ErrorAction SilentlyContinue
+Remove-Item -Path "infra\haproxy_*.cfg" -ErrorAction SilentlyContinue
+Remove-Item -Path "apps\haproxy_*.cfg" -ErrorAction SilentlyContinue
 
 # Remove Terraform state
-Remove-Item -Path "terraform.tfstate*" -ErrorAction SilentlyContinue
+Remove-Item -Path "infra\terraform.tfstate*" -ErrorAction SilentlyContinue
+Remove-Item -Path "apps\terraform.tfstate*" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Path "infra\.terraform" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Path "apps\.terraform" -ErrorAction SilentlyContinue
+Remove-Item -Path "infra\.terraform.lock.hcl" -ErrorAction SilentlyContinue
+Remove-Item -Path "apps\.terraform.lock.hcl" -ErrorAction SilentlyContinue
 
 # Remove temporary files
 Remove-Item -Path "$env:TEMP\hosts_ip.txt" -ErrorAction SilentlyContinue
 
 # Remove kubeconfig
-Remove-Item -Path "$env:USERPROFILE\.kube\config-multipass" -ErrorAction SilentlyContinue
+Remove-Item -Path "$env:USERPROFILE\.kube\config-virtualbox" -ErrorAction SilentlyContinue
 
 Write-Host "Cleanup complete!" -ForegroundColor Green

@@ -4,17 +4,13 @@ terraform {
       source  = "hashicorp/random"
       version = "3.5.1"
     }
-    external = {
-      source  = "hashicorp/external"
-      version = "2.3.1"
+    local = {
+      source  = "hashicorp/local"
+      version = "2.4.0"
     }
     null = {
       source  = "hashicorp/null"
       version = "3.2.1"
-    }
-    local = {
-      source  = "hashicorp/local"
-      version = "2.4.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
@@ -28,13 +24,13 @@ terraform {
 }
 
 provider "kubernetes" {
-  config_path = fileexists(pathexpand("~/.kube/config-virtualbox")) ? pathexpand("~/.kube/config-virtualbox") : null
+  config_path = pathexpand("~/.kube/config-virtualbox")
   insecure    = true
 }
 
 provider "helm" {
   kubernetes {
-    config_path = fileexists(pathexpand("~/.kube/config-virtualbox")) ? pathexpand("~/.kube/config-virtualbox") : null
+    config_path = pathexpand("~/.kube/config-virtualbox")
     insecure    = true
   }
 }

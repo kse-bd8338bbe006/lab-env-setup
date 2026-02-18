@@ -3,9 +3,8 @@
 .SYNOPSIS
     Destroys the VirtualBox K8s cluster, cleaning up all resources.
 .DESCRIPTION
-    Performs a thorough cleanup: Vagrant VMs, orphaned VirtualBox VMs, stale
-    processes, and state files. Terraform resources are destroyed implicitly
-    when the VMs are removed.
+    Performs a thorough cleanup: Terraform state (apps then infra), Vagrant VMs,
+    orphaned VirtualBox VMs, stale processes, and state files.
 
     All output is logged to destroy-cluster_<timestamp>.log for troubleshooting.
 #>
@@ -82,7 +81,7 @@ if ($confirm -ne "y") {
 }
 
 # Step 1: Kill stale vagrant/ruby processes
-Write-Step "1/4" "Stopping stale vagrant processes..."
+Write-Step "1/6" "Stopping stale vagrant processes..."
 $procs = Get-Process -Name ruby, vagrant -ErrorAction SilentlyContinue
 if ($procs) {
     foreach ($p in $procs) {
@@ -95,13 +94,22 @@ if ($procs) {
     Write-Info "No stale processes found."
 }
 
-# Step 2: Vagrant destroy
-Write-Step "2/4" "Destroying Vagrant VMs..."
+# Step 2-3: Terraform destroy (best-effort, cluster may already be down)
+Write-Step "2/6" "Destroying Terraform applications..."
+Invoke-LoggedCommand -Command "terraform" -Arguments @("-chdir=apps", "destroy", "-auto-approve")
+Write-Ok "Applications Terraform destroy complete."
+
+Write-Step "3/6" "Destroying Terraform infrastructure..."
+Invoke-LoggedCommand -Command "terraform" -Arguments @("-chdir=infra", "destroy", "-auto-approve")
+Write-Ok "Infrastructure Terraform destroy complete."
+
+# Step 4: Vagrant destroy
+Write-Step "4/6" "Destroying Vagrant VMs..."
 Invoke-LoggedCommand -Command "vagrant" -Arguments @("destroy", "-f")
 Write-Ok "Vagrant destroy complete."
 
-# Step 3: Clean up orphaned VirtualBox VMs
-Write-Step "3/4" "Removing orphaned VirtualBox VMs..."
+# Step 5: Clean up orphaned VirtualBox VMs
+Write-Step "5/6" "Removing orphaned VirtualBox VMs..."
 if (Test-Path $VBoxManage) {
     $vboxList = & $VBoxManage list vms 2>&1 | Out-String
     Write-Log "VBoxManage list vms:`n$vboxList"
@@ -121,14 +129,19 @@ if (Test-Path $VBoxManage) {
     Write-Log "VBoxManage not found at $VBoxManage" "WARN"
 }
 
-# Step 4: Clean up state files
-Write-Step "4/4" "Cleaning up state files..."
+# Step 6: Clean up state files
+Write-Step "6/6" "Cleaning up state files..."
 $cleanupPaths = @(
     ".vagrant\machines",
     ".join-command",
-    "terraform.tfstate",
-    "terraform.tfstate.backup",
-    ".terraform.tfstate.lock.info",
+    "infra\terraform.tfstate",
+    "infra\terraform.tfstate.backup",
+    "infra\.terraform.tfstate.lock.info",
+    "infra\.terraform",
+    "apps\terraform.tfstate",
+    "apps\terraform.tfstate.backup",
+    "apps\.terraform.tfstate.lock.info",
+    "apps\.terraform",
     "$env:USERPROFILE\.kube\config-virtualbox"
 )
 foreach ($path in $cleanupPaths) {

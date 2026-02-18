@@ -1,0 +1,106 @@
+#cloud-config
+bootcmd:
+- printf "[Resolve]\nDNS=8.8.8.8" > /etc/systemd/resolved.conf
+- [systemctl, restart, systemd-resolved]
+- sleep 10
+- curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+- echo "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+- curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+- echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+- chmod a+r /etc/apt/keyrings/docker.gpg
+- chmod a+r /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+users:
+  - name: root
+    ssh_authorized_keys:
+    - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDDQsJoTxGigfGTzBWDaSRS2ND1SPMRYFnXeyvI88Sh2gU86GMxaJMfNguOVelCyoMAbWbDPiSBlWteNuJgyEmzsl87g5GHky7YKZ8iOy4EotnpkmTiAY4Q6A9hl2BEcSv3VwJtrTIn167y6UPWfZGqZQc91FMO4cx2vfUv2bv/laOWoSQwxxyGIc0yDH9ufzw/EVcngCfmxP/FaL1nzs7kfx+1QDOFMVkK5i77CnmqZFDaTVOZDhjE6KMz7f6C324DOvaf+ArB9ge2VRItrw0j5hiocnkLVK1FIL29MEjDHRfhsnSz0zWRzl0rDGcqyqYS8nptAWKuSqUIdPvpGO09hVvegrfJ3nDUqadCYX6Bhkx29M8qUGUKspjeyU8zN68XQGv2ijHaozaFpgGTgMM8eqI1u/6jmFB5p6/W3DrpDj7spC7MMtAOwMl/hLOMvEfDPQux+SSzSxjDbHtKI5yVRTPQGVuF91xk4+ZUJAGWNSweQBoTf7i7/xudUpAR5FeZlvgPBJ6es1A0AK80WBV1AX/4Iz8WJ23IdOn34AJ7nyy3Wuta+AYDqA5LSNzg4TlhVtAUw6vcGM4QP2w+YgDdI1gOC0DD00Z8wgEGfP6d1D44TRkx1YQ0svMKBnkkGBSl2ufh8mxrlAe6bEtICBL1jOwCGlK12dPN7ER2v0i2fw== kosti@len-home
+
+growpart:
+    mode: auto
+    devices: ["/"]
+manage_etc_hosts: localhost
+locale: "en_US.UTF-8"
+package_update: true
+package_upgrade: true
+# apt_update: true
+# apt_upgrade: true
+packages:
+    # if you change kubernetes version...
+    - kubeadm=1.32.11-1.1
+    - kubelet=1.32.11-1.1
+    - kubectl=1.32.11-1.1
+    - containerd.io
+    - apt-transport-https
+    - ntp
+    - jq
+    - nfs-common
+write_files:
+  - path: /etc/netplan/99-static.yaml
+    content: |
+      network:
+        version: 2
+        ethernets:
+          eth0:
+            dhcp4: true
+          k8snet:
+            match:
+              macaddress: "08:00:27:c8:32:0b"
+            set-name: k8snet
+            addresses:
+              - 192.168.56.11/24
+            routes:
+              - to: 192.168.56.0/24
+                scope: link
+            dhcp4: false
+  - path: /etc/systemd/system/ntp.service.d/restart.conf
+    content: |
+      [Service]
+      Restart=on-failure
+      RestartSec=5
+  - path: /etc/modules-load.d/k8s.conf
+    content: |
+      overlay
+      br_netfilter
+      ip_vs
+      ip_vs_rr
+      ip_vs_wrr
+      ip_vs_sh
+      nf_conntrack
+  - path: /etc/sysctl.d/k8s.conf
+    content: |
+      net.ipv4.ip_forward=1
+      net.bridge.bridge-nf-call-ip6tables=1
+      net.bridge.bridge-nf-call-iptables=1
+  - path: /etc/environment
+    content: |
+      LC_ALL=en_US.UTF-8
+      LANG=en_US.UTF-8
+      KUBECONFIG=/etc/kubernetes/admin.conf
+  - path: /etc/containerd/config.toml
+    content: |
+      version = 2
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+        runtime_type = "io.containerd.runc.v2"
+        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+          SystemdCgroup = true
+runcmd:
+- netplan apply
+- systemctl stop systemd-timesyncd || true
+- systemctl disable systemd-timesyncd || true
+- grep -q "tinker panic 0" /etc/ntp.conf || sed -i "1i tinker panic 0" /etc/ntp.conf
+- systemctl daemon-reload
+- systemctl restart ntp
+- modprobe overlay
+- modprobe br_netfilter
+- modprobe ip_vs
+- modprobe ip_vs_rr
+- modprobe ip_vs_wrr
+- modprobe ip_vs_sh
+- modprobe nf_conntrack
+- sysctl --system
+- mkdir -p /etc/containerd
+- systemctl daemon-reload
+- systemctl restart containerd
+- systemctl enable containerd
+- 
+- echo 192.168.56.10 > /tmp/haproxy_ip
+- touch /tmp/signal
