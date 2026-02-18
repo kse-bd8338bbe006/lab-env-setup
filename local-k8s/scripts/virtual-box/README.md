@@ -64,9 +64,11 @@ Expected output should show an adapter with IP 192.168.56.1.
 
 ### 2.4 Deploy Cluster
 
+Double-click `create-cluster.cmd` in Explorer, or run from a terminal:
+
 ```powershell
 cd scripts\virtual-box
-powershell -ExecutionPolicy Bypass -File create-cluster.ps1
+.\create-cluster.cmd
 ```
 
 The script will:
@@ -86,7 +88,9 @@ Terraform code is split into two directories to solve the provider initializatio
 ```
 virtual-box/
   Vagrantfile              # VM definitions for Vagrant
+  create-cluster.cmd       # Double-click launcher for create-cluster.ps1
   create-cluster.ps1       # Main setup script
+  destroy-cluster.cmd      # Double-click launcher for destroy + cleanup
   destroy-cluster.ps1      # Teardown script
   cleanup-vagrant.ps1      # Fix stale Vagrant state
   script/                  # Shared provisioning templates
@@ -100,11 +104,15 @@ virtual-box/
 
 ## 4. Scripts
 
-| Script | Purpose |
-|--------|---------|
-| `create-cluster.ps1` | Creates all VMs and deploys applications with Terraform |
-| `destroy-cluster.ps1` | Destroys all VMs, Terraform state, and orphaned resources |
-| `cleanup-vagrant.ps1` | Fixes stale locks and reconciles Vagrant state without destroying VMs |
+Each PowerShell script has a corresponding `.cmd` launcher. The `.cmd` files handle execution policy, change to the correct directory, and pause on completion so you can review the output. Double-click a `.cmd` file in Explorer to run it - no terminal setup required.
+
+| Script | Launcher | Purpose |
+|--------|----------|---------|
+| `create-cluster.ps1` | `create-cluster.cmd` | Creates all VMs and deploys applications with Terraform |
+| `destroy-cluster.ps1` | `destroy-cluster.cmd` | Destroys all VMs, Terraform state, and orphaned resources; also runs cleanup |
+| `cleanup-vagrant.ps1` | - | Fixes stale locks and reconciles Vagrant state without destroying VMs |
+
+> **Note**: `destroy-cluster.cmd` runs both `destroy-cluster.ps1` and `cleanup-vagrant.ps1` in sequence.
 
 > **Note on Windows process handling**: Vagrant on Windows may detach from its
 > Ruby child process during `vagrant up`, causing premature exit codes.
@@ -116,7 +124,7 @@ virtual-box/
 
 ## 5. VM Management
 
-### 6.1 Common Commands
+### 5.1 Common Commands
 
 ```powershell
 # Check VM status
@@ -135,12 +143,12 @@ vagrant halt
 # Start stopped VMs
 vagrant up
 
-# Destroy and recreate
-powershell -ExecutionPolicy Bypass -File destroy-cluster.ps1
-powershell -ExecutionPolicy Bypass -File create-cluster.ps1
+# Destroy and recreate (double-click each .cmd file, or run from terminal)
+.\destroy-cluster.cmd
+.\create-cluster.cmd
 ```
 
-### 6.2 VM Specifications
+### 5.2 VM Specifications
 
 | VM | IP | Memory | CPUs | Purpose |
 |----|-----|--------|------|---------|
@@ -207,7 +215,7 @@ Service credentials and URLs are available via `terraform -chdir=apps output`.
 This happens when a previous vagrant command left stale locks. Run:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File cleanup-vagrant.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File cleanup-vagrant.ps1
 ```
 
 ### 8.2 VM Creation Fails
@@ -299,9 +307,10 @@ Modify `VM_SPECS` in `Vagrantfile` to reduce memory allocation:
 
 ## 9. Cleanup
 
-Destroy all VMs and state:
+Destroy all VMs and state by double-clicking `destroy-cluster.cmd`, or from a terminal:
+
 ```powershell
-powershell -ExecutionPolicy Bypass -File destroy-cluster.ps1
+.\destroy-cluster.cmd
 ```
 
 To also remove the downloaded base box:
