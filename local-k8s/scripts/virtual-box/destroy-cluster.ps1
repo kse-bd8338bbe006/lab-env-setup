@@ -128,7 +128,8 @@ $cleanupPaths = @(
     ".join-command",
     "terraform.tfstate",
     "terraform.tfstate.backup",
-    ".terraform.tfstate.lock.info"
+    ".terraform.tfstate.lock.info",
+    "$env:USERPROFILE\.kube\config-virtualbox"
 )
 foreach ($path in $cleanupPaths) {
     $fullPath = Join-Path $ScriptDir $path

@@ -276,20 +276,22 @@ Write-Host "  Log file: $LogFile" -ForegroundColor Gray
 
 # Pre-flight checks
 Write-Log "Running pre-flight checks..."
+$ErrorActionPreference = "Continue"
 if (-not (Get-Command vagrant -ErrorAction SilentlyContinue)) {
     Write-Fail "vagrant not found in PATH"; exit 1
 }
-Write-Log "vagrant: $(& vagrant --version 2>&1)"
+Write-Log "vagrant: $(& vagrant --version 2>$null)"
 
 if (-not (Test-Path $VBoxManage)) {
     Write-Fail "VBoxManage not found at $VBoxManage"; exit 1
 }
-Write-Log "VBoxManage: $(& $VBoxManage --version 2>&1)"
+Write-Log "VBoxManage: $(& $VBoxManage --version 2>$null)"
 
 if (-not (Get-Command terraform -ErrorAction SilentlyContinue)) {
     Write-Fail "terraform not found in PATH"; exit 1
 }
-Write-Log "terraform: $(& terraform --version 2>&1 | Select-Object -First 1)"
+Write-Log "terraform: $(& terraform --version 2>$null | Select-Object -First 1)"
+$ErrorActionPreference = "Stop"
 
 $sshKeyPath = Join-Path $env:USERPROFILE ".ssh\kse_ci_cd_sec_id_rsa.pub"
 if (-not (Test-Path $sshKeyPath)) {
@@ -298,6 +300,12 @@ if (-not (Test-Path $sshKeyPath)) {
     exit 1
 }
 Write-Log "SSH key found: $sshKeyPath"
+
+# Clean up stale files from previous runs
+$hostsIpFile = Join-Path $env:TEMP "hosts_ip.txt"
+if (Test-Path $hostsIpFile) { Remove-Item $hostsIpFile -Force }
+$staleKubeConfig = Join-Path $env:USERPROFILE ".kube\config-virtualbox"
+if (Test-Path $staleKubeConfig) { Remove-Item $staleKubeConfig -Force }
 
 # Kill stale processes from previous failed runs
 Stop-StaleVagrant
@@ -358,13 +366,32 @@ if ($tfInitCode -ne 0) {
 }
 Write-Ok "Terraform initialized."
 
-Write-Step "6/6" "Deploying applications with Terraform..."
+Write-Step "6/7" "Deploying infrastructure with Terraform (first pass)..."
+# First apply: creates VMs, cluster, and kubeconfig file
+# Expected to partially fail: kubernetes/helm resources fail because kubeconfig
+# does not exist at plan time (fileexists returns false). This is normal.
 $tfApplyCode = Invoke-LoggedCommand -Command "terraform" -Arguments @("apply", "-auto-approve") -TimeoutSeconds 1200
 if ($tfApplyCode -ne 0) {
-    Write-Fail "terraform apply failed (exit code $tfApplyCode). See log: $LogFile"
+    Write-Info "First pass completed with errors (expected - kubeconfig not yet available for kubernetes/helm resources)."
+}
+Write-Ok "First Terraform pass complete."
+
+Write-Step "7/7" "Deploying applications with Terraform (second pass)..."
+# Second apply: kubernetes/helm providers detect kubeconfig and deploy resources
+$tfApplyCode = Invoke-LoggedCommand -Command "terraform" -Arguments @("apply", "-auto-approve") -TimeoutSeconds 1200
+if ($tfApplyCode -ne 0) {
+    Write-Fail "terraform apply (second pass) failed (exit code $tfApplyCode). See log: $LogFile"
     exit 1
 }
-Write-Ok "Terraform deployment complete."
+Write-Ok "Second Terraform pass complete."
+
+# Copy kubeconfig to default location
+$kubeConfig = Join-Path $env:USERPROFILE ".kube\config-virtualbox"
+$kubeDefault = Join-Path $env:USERPROFILE ".kube\config"
+if (Test-Path $kubeConfig) {
+    Copy-Item $kubeConfig $kubeDefault -Force
+    Write-Ok "Kubeconfig copied to $kubeDefault"
+}
 
 $ErrorActionPreference = "Stop"
 

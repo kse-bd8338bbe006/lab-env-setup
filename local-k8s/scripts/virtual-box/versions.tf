@@ -28,13 +28,13 @@ terraform {
 }
 
 provider "kubernetes" {
-  config_path = pathexpand("~/.kube/config-virtualbox")
+  config_path = fileexists(pathexpand("~/.kube/config-virtualbox")) ? pathexpand("~/.kube/config-virtualbox") : null
   insecure    = true
 }
 
 provider "helm" {
   kubernetes {
-    config_path = pathexpand("~/.kube/config-virtualbox")
+    config_path = fileexists(pathexpand("~/.kube/config-virtualbox")) ? pathexpand("~/.kube/config-virtualbox") : null
     insecure    = true
   }
 }
