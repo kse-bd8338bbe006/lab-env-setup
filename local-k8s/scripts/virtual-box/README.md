@@ -72,13 +72,33 @@ powershell -ExecutionPolicy Bypass -File create-cluster.ps1
 The script will:
 1. Create and provision each VM sequentially (haproxy -> master -> workers)
 2. Validate provisioning succeeded before proceeding
-3. Run `terraform init` and `terraform apply` to deploy applications
+3. Run `terraform -chdir=infra apply` to configure the cluster and generate kubeconfig
+4. Run `terraform -chdir=apps apply` to deploy applications (ingress, monitoring, ArgoCD, Harbor, Vault)
 
 The first run downloads the Ubuntu box (~800MB) and creates VMs. Subsequent runs use cached images.
 
 ---
 
-## 3. Scripts
+## 3. Directory Structure
+
+Terraform code is split into two directories to solve the provider initialization problem. The kubernetes/helm providers require a valid kubeconfig at plan time, but the kubeconfig does not exist until the cluster is created. Separating infrastructure from applications ensures that `infra/` creates the cluster and kubeconfig first, then `apps/` deploys helm charts with a kubeconfig guaranteed to exist.
+
+```
+virtual-box/
+  Vagrantfile              # VM definitions for Vagrant
+  create-cluster.ps1       # Main setup script
+  destroy-cluster.ps1      # Teardown script
+  cleanup-vagrant.ps1      # Fix stale Vagrant state
+  script/                  # Shared provisioning templates
+  infra/                   # Terraform: cluster setup (null, external, local providers)
+    variables.tf, data.tf, template.tf, master.tf, workers.tf,
+    haproxy.tf, dns.tf, kube_config.tf, storage.tf, outputs.tf
+  apps/                    # Terraform: application deployment (kubernetes, helm providers)
+    data.tf, ingress.tf, storage.tf, argocd.tf, harbor.tf,
+    vault.tf, monitoring.tf, dependency-track.tf
+```
+
+## 4. Scripts
 
 | Script | Purpose |
 |--------|---------|
@@ -94,9 +114,9 @@ The first run downloads the Ubuntu box (~800MB) and creates VMs. Subsequent runs
 
 ---
 
-## 4. VM Management
+## 5. VM Management
 
-### 4.1 Common Commands
+### 6.1 Common Commands
 
 ```powershell
 # Check VM status
@@ -120,7 +140,7 @@ powershell -ExecutionPolicy Bypass -File destroy-cluster.ps1
 powershell -ExecutionPolicy Bypass -File create-cluster.ps1
 ```
 
-### 4.2 VM Specifications
+### 6.2 VM Specifications
 
 | VM | IP | Memory | CPUs | Purpose |
 |----|-----|--------|------|---------|
@@ -131,9 +151,9 @@ powershell -ExecutionPolicy Bypass -File create-cluster.ps1
 
 ---
 
-## 5. Verification
+## 6. Verification
 
-### 5.1 Check VMs
+### 6.1 Check VMs
 
 ```powershell
 vagrant status
@@ -147,14 +167,14 @@ worker-0                  running (virtualbox)
 worker-1                  running (virtualbox)
 ```
 
-### 5.2 Test Connectivity
+### 6.2 Test Connectivity
 
 ```powershell
 ping 192.168.56.10  # HAProxy
 ping 192.168.56.11  # Master
 ```
 
-### 5.3 Kubernetes Status
+### 6.3 Kubernetes Status
 
 ```powershell
 vagrant ssh master-0 -c "kubectl get nodes -o wide"
@@ -162,7 +182,7 @@ vagrant ssh master-0 -c "kubectl get nodes -o wide"
 
 ---
 
-## 6. Access Services
+## 7. Access Services
 
 After Terraform deployment, the following services are available:
 
@@ -170,16 +190,19 @@ After Terraform deployment, the following services are available:
 |---------|-----|
 | ArgoCD | http://argocd.192.168.56.10.nip.io |
 | Harbor | http://harbor.192.168.56.10.nip.io |
+| Vault | http://vault.192.168.56.10.nip.io |
 | Grafana | http://grafana.192.168.56.10.nip.io |
 | Prometheus | http://prometheus.192.168.56.10.nip.io |
 | AlertManager | http://alertmanager.192.168.56.10.nip.io |
 | HAProxy Stats | http://192.168.56.10:8404/stats (admin/admin) |
 
+Service credentials and URLs are available via `terraform -chdir=apps output`.
+
 ---
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
-### 7.1 "Another process is already executing an action"
+### 8.1 "Another process is already executing an action"
 
 This happens when a previous vagrant command left stale locks. Run:
 
@@ -187,14 +210,14 @@ This happens when a previous vagrant command left stale locks. Run:
 powershell -ExecutionPolicy Bypass -File cleanup-vagrant.ps1
 ```
 
-### 7.2 VM Creation Fails
+### 8.2 VM Creation Fails
 
 Check VirtualBox is installed and working:
 ```powershell
 & "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe" --version
 ```
 
-### 7.3 Network Issues
+### 8.3 Network Issues
 
 Verify Host-Only adapter:
 ```powershell
@@ -207,14 +230,14 @@ If missing or wrong IP, create it:
 & "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe" hostonlyif ipconfig "VirtualBox Host-Only Ethernet Adapter" --ip 192.168.56.1 --netmask 255.255.255.0
 ```
 
-### 7.4 Box Download Fails
+### 8.4 Box Download Fails
 
 Manually add the box:
 ```powershell
 vagrant box add ubuntu/jammy64
 ```
 
-### 7.5 Terraform Fails with "Unauthorized"
+### 8.5 Terraform Fails with "Unauthorized"
 
 ```
 Error: Failed to create Ingress 'argocd/argocd-ingress' because: Unauthorized
@@ -234,10 +257,10 @@ Copy-Item "$env:USERPROFILE\.kube\config-virtualbox" "$env:USERPROFILE\.kube\con
 Then re-run terraform:
 
 ```powershell
-terraform apply -auto-approve
+terraform -chdir=apps apply -auto-approve
 ```
 
-### 7.6 Terraform Fails with "x509: certificate signed by unknown authority"
+### 8.6 Terraform Fails with "x509: certificate signed by unknown authority"
 
 ```
 Error: Failed to create Ingress ... tls: failed to verify certificate: x509: certificate signed by unknown authority
@@ -247,7 +270,7 @@ The Kubernetes API server uses a self-signed CA certificate generated by kubeadm
 When HAProxy's TCP idle timeout (50s) resets a long-lived connection, the Terraform
 provider must re-establish TLS. The Go TLS library then rejects the self-signed CA.
 
-**Fix**: Ensure `insecure = true` is set in both provider blocks in `versions.tf`:
+**Fix**: Ensure `insecure = true` is set in both provider blocks in `apps/versions.tf`:
 
 ```hcl
 provider "kubernetes" {
@@ -265,7 +288,7 @@ provider "helm" {
 
 This is safe for a local lab environment. Do not use `insecure = true` in production.
 
-### 7.7 VMs Run Out of Memory
+### 8.7 VMs Run Out of Memory
 
 Modify `VM_SPECS` in `Vagrantfile` to reduce memory allocation:
 ```ruby
@@ -274,7 +297,7 @@ Modify `VM_SPECS` in `Vagrantfile` to reduce memory allocation:
 
 ---
 
-## 8. Cleanup
+## 9. Cleanup
 
 Destroy all VMs and state:
 ```powershell
@@ -288,9 +311,9 @@ vagrant box remove ubuntu/jammy64
 
 ---
 
-## 9. Customization
+## 10. Customization
 
-### 9.1 Modify VM Specifications
+### 10.1 Modify VM Specifications
 
 Edit the `VM_SPECS` hash in `Vagrantfile`:
 
@@ -302,7 +325,7 @@ VM_SPECS = {
 }
 ```
 
-### 9.2 Add More Nodes
+### 10.2 Add More Nodes
 
 Add entries to `VM_SPECS`:
 
@@ -311,7 +334,7 @@ Add entries to `VM_SPECS`:
   "worker-3" => { ip_suffix: 24, memory: 3072, cpus: 3, role: "worker" },
 ```
 
-### 9.3 Change Subnet
+### 10.3 Change Subnet
 
 Modify `NETWORK_PREFIX` in `Vagrantfile`:
 
