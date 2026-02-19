@@ -25,7 +25,7 @@
 #           }
 #           limits = {
 #             cpu    = "2"
-#             memory = "5Gi"  # the recommended minimum 
+#             memory = "5Gi"  # the recommended minimum
 #           }
 #         }
 

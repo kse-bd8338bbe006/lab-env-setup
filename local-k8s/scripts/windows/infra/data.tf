@@ -1,5 +1,5 @@
 data "external" "haproxy" {
-  program = ["pwsh", "-File", "${path.module}/script/multipass.ps1"]
+  program = ["pwsh", "-File", "${path.module}/../script/multipass.ps1"]
   query = {
     name           = "haproxy"
     cpu            = var.cpu
@@ -13,7 +13,7 @@ data "external" "haproxy" {
 }
 
 data "external" "master" {
-  program = ["pwsh", "-File", "${path.module}/script/multipass.ps1"]
+  program = ["pwsh", "-File", "${path.module}/../script/multipass.ps1"]
   query = {
     name           = "master-${count.index}"
     cpu            = var.cpu
@@ -29,7 +29,7 @@ data "external" "master" {
 }
 
 data "external" "masters" {
-  program = ["pwsh", "-File", "${path.module}/script/multipass.ps1"]
+  program = ["pwsh", "-File", "${path.module}/../script/multipass.ps1"]
   query = {
     name           = "master-${count.index + 1}"
     cpu            = var.cpu
@@ -45,7 +45,7 @@ data "external" "masters" {
 }
 
 data "external" "workers" {
-  program = ["pwsh", "-File", "${path.module}/script/multipass.ps1"]
+  program = ["pwsh", "-File", "${path.module}/../script/multipass.ps1"]
   query = {
     name           = "worker-${count.index}"
     cpu            = var.worker_cpu

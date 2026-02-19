@@ -1,6 +1,10 @@
-# Terraform Kubernetes Multipass - Windows
+# Terraform Kubernetes Multipass - Windows (Hyper-V)
 
-This module provisions a production-like Kubernetes cluster using Multipass on Windows with static IP configuration, monitoring, GitOps, and persistent storage.
+This module provisions a production-like Kubernetes cluster using Multipass on Windows with Hyper-V, static IP configuration, monitoring, GitOps, and persistent storage.
+
+Terraform is split into two phases to solve the provider initialization problem:
+- **infra/** - Creates VMs, bootstraps the K8s cluster, and generates kubeconfig
+- **apps/** - Deploys applications using kubernetes/helm providers (requires kubeconfig from infra)
 
 ## Prerequisites
 
@@ -10,32 +14,41 @@ This module provisions a production-like Kubernetes cluster using Multipass on W
 - PowerShell 7+ recommended
 - SSH key pair in `%USERPROFILE%\.ssh\` (kse_ci_cd_sec_id_rsa)
 
-## Network Setup
+## Quick Start
 
-Before running Terraform, set up the Hyper-V network switch:
+### Automated (Recommended)
+
+Run the full setup with a single command:
+
+```cmd
+create-cluster.cmd
+```
+
+Or directly with PowerShell:
 
 ```powershell
-# Run as Administrator
+.\create-cluster.ps1
+```
+
+This handles network setup, Terraform init/apply for both infra and apps, and kubeconfig configuration. Progress and errors are logged to `logs/create-cluster_<timestamp>.log`.
+
+### Manual
+
+1. Set up the Hyper-V network (run as Administrator):
+```powershell
 .\setup-network.ps1
 ```
 
-This creates a Hyper-V internal switch named `K8sSwitch` with the 192.168.50.0/24 network.
-
-## Quick Start
-
-1. Ensure Multipass is installed and running:
+2. Deploy infrastructure (VMs + K8s cluster):
 ```powershell
-multipass version
+terraform -chdir=infra init
+terraform -chdir=infra apply -auto-approve
 ```
 
-2. Initialize Terraform:
+3. Deploy applications:
 ```powershell
-terraform init
-```
-
-3. Apply the configuration:
-```powershell
-terraform apply
+terraform -chdir=apps init
+terraform -chdir=apps apply -auto-approve
 ```
 
 4. Access your cluster:
@@ -44,9 +57,50 @@ $env:KUBECONFIG = "$env:USERPROFILE\.kube\config-multipass"
 kubectl get nodes
 ```
 
-## What Gets Installed
+## Directory Structure
 
-The cluster comes with these pre-installed applications:
+```
+windows/
+├── infra/                   Terraform: VM creation, K8s bootstrap, kubeconfig
+│   ├── versions.tf          Providers: external, null, local
+│   ├── variables.tf         All configuration variables
+│   ├── data.tf              Multipass VM creation via external data source
+│   ├── template.tf          Cloud-init and HAProxy config generation
+│   ├── master.tf            Master node initialization (kubeadm init)
+│   ├── workers.tf           Worker node join verification
+│   ├── more_masters.tf      Additional masters (HA setup, masters=3)
+│   ├── haproxy.tf           HAProxy initial config deployment
+│   ├── haproxy_final.tf     HAProxy HA config (masters=3)
+│   ├── dns.tf               /etc/hosts distribution
+│   ├── storage.tf           NFS server + PostgreSQL on HAProxy VM
+│   ├── kube_config.tf       Retrieve kubeconfig from master
+│   └── outputs.tf           Exports IPs, SSH key for apps/
+├── apps/                    Terraform: K8s application deployment
+│   ├── versions.tf          Providers: kubernetes, helm, random, null, local
+│   ├── data.tf              Reads infra state via terraform_remote_state
+│   ├── ingress.tf           NGINX Ingress Controller + HAProxy update
+│   ├── storage.tf           NFS Subdir External Provisioner (StorageClass)
+│   ├── monitoring.tf        Prometheus, Grafana, AlertManager
+│   ├── argocd.tf            ArgoCD GitOps
+│   ├── vault.tf             HashiCorp Vault + External Secrets Operator
+│   ├── harbor.tf            Harbor container registry
+│   └── dependency-track.tf  Dependency-Track (disabled)
+├── script/                  Shared scripts and templates
+│   ├── multipass.ps1        Multipass VM creation helper
+│   ├── kube-init.sh         Kubernetes master initialization
+│   ├── cloud-init.yaml      Cloud-init template for K8s nodes
+│   ├── cloud-init-haproxy.yaml  Cloud-init template for HAProxy
+│   ├── haproxy.cfg.tpl      HAProxy initial config template
+│   └── haproxy-ingress.cfg.tpl  HAProxy ingress config template
+├── create-cluster.ps1       Full orchestration with logging
+├── create-cluster.cmd       Wrapper for create-cluster.ps1
+├── destroy-cluster.ps1      Full cleanup with logging
+├── destroy-cluster.cmd      Wrapper for destroy-cluster.ps1
+├── setup-network.ps1        Hyper-V network setup (run as Admin)
+└── reset.ps1                Quick cleanup of VMs and state
+```
+
+## What Gets Installed
 
 | Application | Version | URL | Credentials |
 |-------------|---------|-----|-------------|
@@ -54,6 +108,8 @@ The cluster comes with these pre-installed applications:
 | **Grafana** | 12.3.1 | http://grafana.192.168.50.10.nip.io | admin / admin |
 | **Prometheus** | Latest | http://prometheus.192.168.50.10.nip.io | - |
 | **AlertManager** | Latest | http://alertmanager.192.168.50.10.nip.io | - |
+| **Vault** | 0.28.1 | http://vault.192.168.50.10.nip.io | `kubectl -n vault get secret vault-unseal-key -o jsonpath='{.data.root-token}' \| base64 -d` |
+| **Harbor** | 1.18.1 | http://harbor.192.168.50.10.nip.io | admin / `terraform -chdir=apps output -raw harbor_admin_password` |
 | **NGINX Ingress** | 4.12.0 | - | - |
 | **NFS Provisioner** | 4.0.18 | - | StorageClass: `nfs-client` |
 | **PostgreSQL** | Latest | 192.168.50.10:5432 | postgres / `multipass exec haproxy -- cat /root/postgres_credentials.txt` |
@@ -71,15 +127,15 @@ Static IP addresses are assigned to all VMs:
 
 ## Variables
 
+Variables are defined in `infra/variables.tf`:
+
 | Name | Description | Type | Default |
 |------|-------------|------|---------|
 | cpu | Number of CPU assigned to vms | number | 2 |
 | worker_cpu | Number of CPU for worker nodes | number | 3 |
-| mem | Memory assigned to vms (default) | string | "2G" |
 | master_mem | Memory for master nodes | string | "4G" |
 | haproxy_mem | Memory for HAProxy VM | string | "4G" |
 | worker_mem | Memory for worker nodes | string | "3G" |
-| disk | Disk size for vms (default) | string | "10G" |
 | haproxy_disk | Disk size for HAProxy (NFS storage) | string | "30G" |
 | worker_disk | Disk size for worker nodes | string | "15G" |
 | kube_version | Version of Kubernetes to use | string | "1.32.11-1.1" |
@@ -114,9 +170,20 @@ spec:
 
 ## Clean Up
 
-To destroy all resources:
+Automated (with confirmation prompt):
+```cmd
+destroy-cluster.cmd
+```
+
+Or manually:
 ```powershell
-terraform destroy
+terraform -chdir=apps destroy -auto-approve
+terraform -chdir=infra destroy -auto-approve
+multipass delete --all && multipass purge
+```
+
+Quick reset (deletes VMs and all state):
+```powershell
 .\reset.ps1
 ```
 
@@ -126,3 +193,4 @@ terraform destroy
 - Kubeconfig is automatically copied to `%USERPROFILE%\.kube\config-multipass` and `%USERPROFILE%\.kube\config`
 - All services are accessible via nip.io DNS (resolves to 192.168.50.10)
 - CNI: Weave Net v2.8.1
+- Logs are saved to `logs/` directory with timestamps

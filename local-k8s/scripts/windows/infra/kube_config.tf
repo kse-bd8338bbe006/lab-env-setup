@@ -12,5 +12,4 @@ Copy-Item "$env:USERPROFILE\.kube\config-multipass" "$env:USERPROFILE\.kube\conf
 CMD
     interpreter = ["pwsh", "-Command"]
   }
-
 }

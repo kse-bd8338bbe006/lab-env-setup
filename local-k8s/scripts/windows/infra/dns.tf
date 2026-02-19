@@ -42,6 +42,7 @@ resource "null_resource" "master-dns" {
   }
   count = 1
 }
+
 resource "null_resource" "masters-dns" {
   depends_on = [null_resource.workers-node]
 
@@ -64,6 +65,7 @@ resource "null_resource" "masters-dns" {
   }
   count = var.masters >= 3 ? var.masters - 1 : 0
 }
+
 resource "null_resource" "workers-dns" {
   depends_on = [null_resource.workers-node]
 
