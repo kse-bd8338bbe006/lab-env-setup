@@ -1,0 +1,106 @@
+#cloud-config
+bootcmd:
+- printf "[Resolve]\nDNS=8.8.8.8" > /etc/systemd/resolved.conf
+- [systemctl, restart, systemd-resolved]
+- sleep 10
+- curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+- echo "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+- curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+- echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+- chmod a+r /etc/apt/keyrings/docker.gpg
+- chmod a+r /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+users:
+  - name: root
+    ssh_authorized_keys:
+    - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDp+nzyb6GOr5GyVWkeGrv5Nw0pqSnIr29YHWBKY+nXC/gynG+a0K7T2TsqbBfrYfL/Pc2XqHUAzXVGfdvdJy8DJwPMlX9sSdIBqfAr9Uevwzuk7alA98sM3kaf1Miq+ht7jImHRo8dGJR8zAGekKBVRW5aRJwJvDe4ZQL/pImGswDOQgND7oxuEOUVABWHkwl/v1gW4KGzu6TGfG+VCTNPMg8rM2i5U0iGqVoHKVb6sBHVGAnfLscQtpfYQUb0LxL+iT9avM2N/+9dsN/XRemL/69TIKa2SnY8N8MOPy+B8LJkH+WWMY/neAMtYnuehuoOBck2RbBTLmxRwssLa5XCc48edWjM4ciBEO3GY73UfjlmCFS31II55tVePScRMHkw7/b3KyppifBrQpIcAcgWbL8dzb9giBhWvHAsSINimBAg9BDsDUXMxRq8L8G8iURzWzshxT7SUZmaznpMF6VvyfeFr9/rS/gU7vPVN/zJIAeF9s/AAXQTsl3TMd5zUzVyCK0loTrpqHOlIuBsSe0YM+nuOA9OXYiXG9C5ZV27h1BAX2sTeQ+FzX3q/jjUUh/3CZ7QIF/8HwBULrtD5W+5aGlGLE9W15EIXh86ozoU/Ycx4kSWUCNgEeR1kw9c00nIjYWcqSrke3ej8hixDycvRtWm6uY+M6JPwwy/8jI8pw== kot@192.168.1.148
+
+growpart:
+    mode: auto
+    devices: ["/"]
+manage_etc_hosts: localhost
+locale: "en_US.UTF-8"
+package_update: true
+package_upgrade: true
+packages:
+    # if you change kubernetes version...
+    - kubeadm=1.32.11-1.1
+    - kubelet=1.32.11-1.1
+    - kubectl=1.32.11-1.1
+    - containerd.io
+    - apt-transport-https
+    - ntp
+    - jq
+    - nfs-common
+write_files:
+  - path: /etc/netplan/99-static.yaml
+    content: |
+      network:
+        version: 2
+        ethernets:
+          eth0:
+            dhcp4: true
+            dhcp4-overrides:
+              use-routes: false
+              use-dns: false
+          k8snet:
+            match:
+              macaddress: "52:54:00:c8:32:16"
+            set-name: k8snet
+            addresses:
+              - 192.168.50.22/24
+            nameservers:
+              addresses: [8.8.8.8, 8.8.4.4]
+            dhcp4: false
+  - path: /etc/systemd/system/ntp.service.d/restart.conf
+    content: |
+      [Service]
+      Restart=on-failure
+      RestartSec=5
+  - path: /etc/modules-load.d/k8s.conf
+    content: |
+      overlay
+      br_netfilter
+      ip_vs
+      ip_vs_rr
+      ip_vs_wrr
+      ip_vs_sh
+      nf_conntrack
+  - path: /etc/sysctl.d/k8s.conf
+    content: |
+      net.ipv4.ip_forward=1
+      net.bridge.bridge-nf-call-ip6tables=1
+      net.bridge.bridge-nf-call-iptables=1
+  - path: /etc/environment
+    content: |
+      LC_ALL=en_US.UTF-8
+      LANG=en_US.UTF-8
+      KUBECONFIG=/etc/kubernetes/admin.conf
+  - path: /etc/containerd/config.toml
+    content: |
+      version = 2
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+        runtime_type = "io.containerd.runc.v2"
+        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+          SystemdCgroup = true
+runcmd:
+- netplan apply
+- systemctl stop systemd-timesyncd || true
+- systemctl disable systemd-timesyncd || true
+- grep -q "tinker panic 0" /etc/ntp.conf || sed -i "1i tinker panic 0" /etc/ntp.conf
+- systemctl daemon-reload
+- systemctl restart ntp
+- modprobe overlay
+- modprobe br_netfilter
+- modprobe ip_vs
+- modprobe ip_vs_rr
+- modprobe ip_vs_wrr
+- modprobe ip_vs_sh
+- modprobe nf_conntrack
+- sysctl --system
+- mkdir -p /etc/containerd
+- systemctl daemon-reload
+- systemctl restart containerd
+- systemctl enable containerd
+- kubeadm join 192.168.50.10:6443 --token jtrq0y.p7n0w1n0z9jsyish --discovery-token-ca-cert-hash sha256:ae389ea3d35f95d58e3b17555b284566d1eeb8a2400720f46fc7d55dadcdce08 
+- echo  > /tmp/haproxy_ip
+- touch /tmp/signal

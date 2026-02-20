@@ -2,6 +2,8 @@
 
 A GitHub account is required before proceeding. Create a new organization at [github.com/organizations/plan](https://github.com/organizations/plan) with a unique name, for example `kse-<your_unique_id>`. Start with the **Free** plan — you can upgrade later.
 
+> **Important:** Use **lowercase only** in your organization name. OCI image references (used by GHCR) must be lowercase. If your org name contains uppercase letters (e.g., `kse-WhatIsYourAlibi`), Kubernetes will fail with `invalid reference format` when trying to pull container images. See [GHCR image name must be lowercase](#ghcr-image-name-must-be-lowercase) for details.
+
 In later labs you will need to upgrade to the **Team** plan (a free trial is available). The Free plan does not include the security features used in this course. See [github.com/security/plans](https://github.com/security/plans) for a full comparison.
 
 ### Fork the course repositories
@@ -65,13 +67,46 @@ See [Setup Guide](setup-guide.md) for detailed step-by-step instructions.
 
 
 ### kubeconfig configuration
+
+After the cluster is created, Terraform generates a kubeconfig file at `~/.kube/config-multipass`. You need to tell `kubectl` to use it. There are several options:
+
+**Option 1 — Use as default config (simplest for single-cluster setups):**
 ```bash
-cp config-multipass config
+# Back up existing config if you have one
+cp ~/.kube/config ~/.kube/config.bak 2>/dev/null
+
+# Replace with the lab cluster config
+cp ~/.kube/config-multipass ~/.kube/config
 ```
-or use export:
+
+After this, all `kubectl` commands will target the lab cluster by default without any extra flags.
+
+**Option 2 — Set KUBECONFIG environment variable (per terminal session):**
 ```bash
-export KUBECONFIG=$(pwd)/config-multipass
+export KUBECONFIG=~/.kube/config-multipass
 ```
+
+This only affects the current shell session. Add it to your `~/.zshrc` or `~/.bashrc` to make it persistent:
+```bash
+echo 'export KUBECONFIG=~/.kube/config-multipass' >> ~/.zshrc
+```
+
+**Option 3 — Use the `--kubeconfig` flag (explicit, no global changes):**
+```bash
+kubectl --kubeconfig ~/.kube/config-multipass get nodes
+```
+
+This is useful if you work with multiple clusters and don't want to change the default config.
+
+**Option 4 — Merge multiple kubeconfigs (advanced, multiple clusters):**
+```bash
+# macOS / Linux
+export KUBECONFIG=~/.kube/config:~/.kube/config-multipass
+kubectl config get-contexts          # list all contexts
+kubectl config use-context <name>    # switch between clusters
+```
+
+> **Tip:** If `kubectl` commands hang or return connection errors, verify your kubeconfig points to the correct cluster IP (`192.168.50.10:6443`) and that the network bridge is set up (macOS: `sudo bash setup-network.sh`).
 
 
 ### Configure ArgoCD
@@ -351,6 +386,34 @@ spec:
 > **Why this is better:** secrets never appear in Git (not even encrypted). The `ExternalSecret` only contains a *reference* to where the secret lives in Vault. The actual credentials exist only in Vault and in the auto-generated Kubernetes Secret.
 
 For more details on the architecture and the difference between ESO and Vault Agent Injector, see [Vault + ESO Architecture](vault-eso-architecture.md).
+
+### GHCR image name must be lowercase
+
+OCI (Open Container Initiative) spec requires image references to be lowercase only. GitHub automatically converts your username/org to lowercase for GHCR URLs, but if your Kubernetes manifests contain uppercase letters — the container runtime will reject the reference before even attempting to pull.
+
+> **Common pitfall:** If your GitHub org or repo contains uppercase letters (e.g., `kse-WhatIsYourAlibi`), you **must** lowercase them in your image reference: `ghcr.io/kse-whatisyouralibi/...`. Otherwise Kubernetes will fail with `invalid reference format` before even attempting to pull.
+
+To protect against this in CI workflows, force the image name to lowercase:
+
+```yaml
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
+
+jobs:
+  build:
+    steps:
+      - name: Lowercase image name
+        run: echo "IMAGE=${IMAGE_NAME,,}" >> $GITHUB_ENV
+
+      - name: Build and push
+        run: docker build -t ${{ env.IMAGE }}:${{ github.sha }} .
+```
+
+`${VAR,,}` is bash syntax for lowercase. An alternative using `tr`:
+
+```bash
+echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]'
+```
 
 ### Create GitHub token to pull images from GHCR
 

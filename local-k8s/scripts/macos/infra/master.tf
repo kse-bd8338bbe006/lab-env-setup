@@ -13,7 +13,7 @@ resource "null_resource" "master-node" {
   }
 
   provisioner "remote-exec" {
-    script = "${path.module}/script/kube-init.sh"
+    script = "${path.module}/../script/kube-init.sh"
   }
 
   provisioner "local-exec" {

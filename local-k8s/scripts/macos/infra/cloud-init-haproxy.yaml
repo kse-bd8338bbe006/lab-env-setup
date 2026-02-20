@@ -1,0 +1,57 @@
+#cloud-config
+bootcmd:
+- printf "[Resolve]\nDNS=8.8.8.8" > /etc/systemd/resolved.conf
+- [systemctl, restart, systemd-resolved]
+users:
+  - name: root
+    ssh_authorized_keys:
+    - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDp+nzyb6GOr5GyVWkeGrv5Nw0pqSnIr29YHWBKY+nXC/gynG+a0K7T2TsqbBfrYfL/Pc2XqHUAzXVGfdvdJy8DJwPMlX9sSdIBqfAr9Uevwzuk7alA98sM3kaf1Miq+ht7jImHRo8dGJR8zAGekKBVRW5aRJwJvDe4ZQL/pImGswDOQgND7oxuEOUVABWHkwl/v1gW4KGzu6TGfG+VCTNPMg8rM2i5U0iGqVoHKVb6sBHVGAnfLscQtpfYQUb0LxL+iT9avM2N/+9dsN/XRemL/69TIKa2SnY8N8MOPy+B8LJkH+WWMY/neAMtYnuehuoOBck2RbBTLmxRwssLa5XCc48edWjM4ciBEO3GY73UfjlmCFS31II55tVePScRMHkw7/b3KyppifBrQpIcAcgWbL8dzb9giBhWvHAsSINimBAg9BDsDUXMxRq8L8G8iURzWzshxT7SUZmaznpMF6VvyfeFr9/rS/gU7vPVN/zJIAeF9s/AAXQTsl3TMd5zUzVyCK0loTrpqHOlIuBsSe0YM+nuOA9OXYiXG9C5ZV27h1BAX2sTeQ+FzX3q/jjUUh/3CZ7QIF/8HwBULrtD5W+5aGlGLE9W15EIXh86ozoU/Ycx4kSWUCNgEeR1kw9c00nIjYWcqSrke3ej8hixDycvRtWm6uY+M6JPwwy/8jI8pw== kot@192.168.1.148
+
+growpart:
+    mode: auto
+    devices: ["/"]
+manage_etc_hosts: localhost
+locale: "en_US.UTF-8"
+package_update: true
+package_upgrade: true
+packages:
+    - haproxy
+    - ntp
+write_files:
+  - path: /etc/netplan/99-static.yaml
+    content: |
+      network:
+        version: 2
+        ethernets:
+          eth0:
+            dhcp4: true
+            dhcp4-overrides:
+              use-routes: false
+              use-dns: false
+          k8snet:
+            match:
+              macaddress: "52:54:00:c8:32:0a"
+            set-name: k8snet
+            addresses:
+              - 192.168.50.10/24
+            nameservers:
+              addresses: [8.8.8.8, 8.8.4.4]
+            dhcp4: false
+  - path: /etc/sysctl.d/forward.conf
+    content: |
+      net.ipv4.ip_forward=1
+  - path: /etc/systemd/system/ntp.service.d/restart.conf
+    content: |
+      [Service]
+      Restart=on-failure
+      RestartSec=5
+runcmd:
+- netplan apply
+- sysctl --system
+- systemctl stop systemd-timesyncd || true
+- systemctl disable systemd-timesyncd || true
+- grep -q "tinker panic 0" /etc/ntp.conf || sed -i "1i tinker panic 0" /etc/ntp.conf
+- systemctl daemon-reload
+- systemctl restart ntp
+- systemctl restart haproxy
+- touch /tmp/signal

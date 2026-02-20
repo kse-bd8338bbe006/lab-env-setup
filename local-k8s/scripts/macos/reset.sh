@@ -8,16 +8,22 @@ multipass purge
 
 echo "Cleaning up generated files..."
 
-# Remove cloud-init files
-rm -f cloud-init-*.yaml 2>/dev/null
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Remove HAProxy config files
-rm -f haproxy_*.cfg 2>/dev/null
+# Remove cloud-init and HAProxy config files from infra/
+rm -f "$SCRIPT_DIR/infra/cloud-init-*.yaml" 2>/dev/null
+rm -f "$SCRIPT_DIR/infra/haproxy_*.cfg" 2>/dev/null
 
-# Remove Terraform state
-rm -f terraform.tfstate* 2>/dev/null
-rm -rf .terraform 2>/dev/null
-rm -f .terraform.lock.hcl 2>/dev/null
+# Remove HAProxy ingress config from apps/
+rm -f "$SCRIPT_DIR/apps/haproxy_ingress.cfg" 2>/dev/null
+
+# Remove Terraform state from infra/ and apps/
+rm -f "$SCRIPT_DIR/infra/terraform.tfstate"* 2>/dev/null
+rm -rf "$SCRIPT_DIR/infra/.terraform" 2>/dev/null
+rm -f "$SCRIPT_DIR/infra/.terraform.lock.hcl" 2>/dev/null
+rm -f "$SCRIPT_DIR/apps/terraform.tfstate"* 2>/dev/null
+rm -rf "$SCRIPT_DIR/apps/.terraform" 2>/dev/null
+rm -f "$SCRIPT_DIR/apps/.terraform.lock.hcl" 2>/dev/null
 
 # Remove temporary files
 rm -f /tmp/hosts_ip.txt 2>/dev/null

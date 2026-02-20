@@ -1,5 +1,5 @@
 data "external" "haproxy" {
-  program = ["python3", "${path.module}/script/multipass.py"]
+  program = ["python3", "${path.module}/../script/multipass.py"]
   query = {
     name         = "haproxy"
     cpu          = var.cpu
@@ -13,7 +13,7 @@ data "external" "haproxy" {
 }
 
 data "external" "master" {
-  program = ["python3", "${path.module}/script/multipass.py"]
+  program = ["python3", "${path.module}/../script/multipass.py"]
   query = {
     name         = "master-${count.index}"
     cpu          = var.cpu
@@ -29,7 +29,7 @@ data "external" "master" {
 }
 
 data "external" "masters" {
-  program = ["python3", "${path.module}/script/multipass.py"]
+  program = ["python3", "${path.module}/../script/multipass.py"]
   query = {
     name         = "master-${count.index + 1}"
     cpu          = var.cpu
@@ -45,7 +45,7 @@ data "external" "masters" {
 }
 
 data "external" "workers" {
-  program = ["python3", "${path.module}/script/multipass.py"]
+  program = ["python3", "${path.module}/../script/multipass.py"]
   query = {
     name         = "worker-${count.index}"
     cpu          = var.worker_cpu

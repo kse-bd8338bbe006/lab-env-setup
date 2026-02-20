@@ -12,9 +12,4 @@ resource "helm_release" "metrics_server" {
   }
 
   wait = true
-
-  depends_on = [
-    null_resource.workers-node,
-    null_resource.kube_config
-  ]
 }

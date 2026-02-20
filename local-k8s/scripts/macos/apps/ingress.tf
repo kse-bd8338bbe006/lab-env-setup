@@ -23,11 +23,17 @@ resource "helm_release" "nginx_ingress" {
 
   # Wait for the release to be deployed
   wait = true
+}
 
-  depends_on = [
-    null_resource.workers-node,
-    null_resource.kube_config
-  ]
+# HAProxy config with ingress backends (installed after NGINX Ingress)
+resource "local_file" "haproxy_ingress_cfg" {
+  filename = "${path.module}/haproxy_ingress.cfg"
+  content = templatefile("${path.module}/../script/haproxy-ingress.cfg.tpl", {
+    master-0 = local.master_ips[0],
+    master-1 = local.masters_count > 1 ? local.master_ips[1] : "",
+    master-2 = local.masters_count > 2 ? local.master_ips[2] : "",
+    workers  = local.worker_ips
+  })
 }
 
 # Update HAProxy config after ingress is installed
@@ -40,7 +46,7 @@ resource "null_resource" "haproxy_ingress" {
 
   connection {
     type        = "ssh"
-    host        = data.external.haproxy.result.ip
+    host        = local.haproxy_ip
     user        = "root"
     private_key = file(local.ssh_private_key)
   }
