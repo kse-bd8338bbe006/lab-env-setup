@@ -27,7 +27,7 @@ packages:
     - kubectl=${k_version}
     - containerd.io
     - apt-transport-https
-    - ntp
+    - chrony
     - jq
     - nfs-common
 write_files:
@@ -50,7 +50,19 @@ write_files:
             nameservers:
               addresses: [8.8.8.8, 8.8.4.4]
             dhcp4: false
-  - path: /etc/systemd/system/ntp.service.d/restart.conf
+  - path: /etc/chrony/chrony.conf
+    content: |
+      # Lab cluster NTP config. Uses chrony (not ntpd) because chrony's
+      # `makestep 1.0 -1` directive instantly steps the clock for any
+      # drift at any time -- ntpd panics and refuses to step once drift
+      # exceeds 1000s, which is exactly what happens when a Multipass
+      # VM is suspended/resumed.
+      pool pool.ntp.org iburst maxsources 4
+      makestep 1.0 -1
+      rtcsync
+      driftfile /var/lib/chrony/chrony.drift
+      logdir /var/log/chrony
+  - path: /etc/systemd/system/chrony.service.d/restart.conf
     content: |
       [Service]
       Restart=on-failure
@@ -85,9 +97,8 @@ runcmd:
 - netplan apply
 - systemctl stop systemd-timesyncd || true
 - systemctl disable systemd-timesyncd || true
-- grep -q "tinker panic 0" /etc/ntp.conf || sed -i "1i tinker panic 0" /etc/ntp.conf
 - systemctl daemon-reload
-- systemctl restart ntp
+- systemctl enable --now chrony
 - modprobe overlay
 - modprobe br_netfilter
 - modprobe ip_vs
