@@ -713,6 +713,52 @@ curl -k https://192.168.56.11:6443/healthz   # Direct to master
 curl -k https://192.168.56.10:6443/healthz   # Through HAProxy
 ```
 
+### 10.7 Incorrect Time on master-0 VM in Multipass
+
+**Symptom:** Time-related issues or certificate validation failures in the cluster.
+
+**Check whether time is correct:**
+```bash
+multipass exec master-0 -- date -u
+```
+
+**If time is incorrect, fix it by installing and enabling Chrony:**
+```bash
+multipass exec master-0 -- sudo apt-get update
+multipass exec master-0 -- sudo apt-get install -y chrony
+multipass exec master-0 -- sudo systemctl enable --now chrony
+multipass exec master-0 -- chronyc sources -v
+multipass exec master-0 -- sudo chronyc -a makestep
+multipass exec master-0 -- date -u # Verify time is now correct
+```
+
+### 10.8 Problem with Deployment Self-Hosted Runner on macOS
+
+**Symptom:** Self-hosted runner configuration fails on macOS.
+
+**Solution:** Set locale environment variables when running the configuration scripts:
+```bash
+LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 ./config.sh --url https://github.com/your-org --token <token>
+LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 ./run.sh
+```
+
+### 10.9 Problem with Docker on Self-Hosted Runner (No Docker Daemon/Engine Running)
+
+**Symptom:** Docker commands fail with "daemon not running" error on self-hosted runner.
+
+**Solution:** Install and start Colima (container runtime for macOS):
+```bash
+brew install colima
+colima start
+docker context use colima
+docker context ls  # Verify colima context is active
+```
+
+> **Note:** Stop Colima after using it to free system resources:
+```bash
+colima stop
+```
+
 ---
 
 ## Summary and Key Concepts
