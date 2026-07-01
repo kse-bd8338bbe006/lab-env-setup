@@ -525,3 +525,24 @@ Invite the instructor (`torinks` on GitHub) to your organization as a **Member**
 - **Troubleshooting** — assisting with issues you may encounter during labs
 
 To invite: go to **Organization Settings → People → Invite member** and enter the instructor's GitHub username.
+
+### Configure deployment automation (`DEPLOYMENT_PAT`)
+
+In the **Build and deploy the service** step above you updated the image tag in `kse-labs-deployment` by hand. Later labs automate that: the service's CI has an `update-deployment` job that bumps the tag for you after the image is built, so ArgoCD deploys the new version without a manual edit.
+
+That job writes to a **different** repo (`kse-labs-deployment`) than the one it runs in, and the built-in `GITHUB_TOKEN` only has access to the repo running the workflow. So it needs a token with write access to `kse-labs-deployment`, read from a GitHub Actions secret named `DEPLOYMENT_PAT`. Without it the job fails with `Input required and not supplied: token`.
+
+> **Note:** Unlike the GHCR pull token, this one is **not** stored in Vault. It is a GitHub Actions secret used by CI to push a commit, not a credential the cluster consumes.
+
+1. Create the token (browser only - GitHub has no API to mint a PAT):
+   - **Classic:** Settings -> Developer settings -> Personal access tokens -> Tokens (classic) -> Generate. Name it `deployment-pat`. Scope: `public_repo` if your `kse-labs-deployment` is public, or `repo` if it is private.
+   - **Or fine-grained** (least privilege): Resource owner = your org, Repository access = only `kse-labs-deployment`, Permissions -> Contents = **Read and write**.
+
+2. Store it as an **organization secret** so every service repo can use it:
+   - Organization Settings -> Secrets and variables -> Actions -> **New organization secret**
+   - Name: `DEPLOYMENT_PAT`, value: the token, Repository access: **All repositories**
+   - (You can instead add it as a per-repo secret under the service repo's Settings -> Secrets and variables -> Actions, but one org secret covers every `applications/*` repo at once.)
+
+> **Note:** GitHub never copies secrets when you fork or clone a repo, so a freshly forked service repo has no `DEPLOYMENT_PAT` until you add one (or already have it as an org secret).
+
+With the secret in place, re-run the service's build workflow. The `update-deployment` job pushes a `deploy: <service> <sha>` commit to `kse-labs-deployment`, and ArgoCD syncs it automatically - no manual tag edit needed.
